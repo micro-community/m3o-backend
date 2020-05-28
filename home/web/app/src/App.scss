@@ -1,0 +1,112 @@
+$maxWidth: 1200px;
+$outerPadding: 50px;
+
+$black: #1A1A1F;
+$gray: #424242;
+$blue: #3D87F7;
+
+h1, h2, h3, h4 {
+  color: $black;
+}
+
+.App {
+  text-align: center;
+  font-family: 'Public Sans', sans-serif;
+  padding: ($outerPadding / 2) $outerPadding;
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    max-width: $maxWidth;
+    margin-left: auto;
+    margin-right: auto;
+
+    h3 {
+      font-size: 16px;
+    }
+
+    nav {
+      display: flex;
+      margin-top: auto;
+      margin-bottom: auto;
+
+      a {
+        color: $gray;
+        text-decoration: none;
+        font-size: 14px;
+        margin-left:$outerPadding;
+        font-weight: 500;
+
+        &.login {
+          color: $blue;
+        }
+      }
+    }
+  }
+
+  .hero {
+    display: flex;
+    max-width: $maxWidth;
+    margin-left: auto;
+    margin-right: auto;
+    padding-top: 100px;
+    padding-bottom: 100px;
+
+    .left {
+      min-width: 550px;
+      h1 {
+        text-align: left;
+        font-size: 40px;
+        line-height: 1.4;
+
+        .underline {
+          animation: border-bottom-width;
+          animation-duration: 2s;
+          border-bottom: solid 6px rgba($color: $blue, $alpha: 0.7);
+        }
+      }
+
+      p {
+        text-align: left;
+        color: $black;
+        line-height: 1.8;
+        font-size: 16px;
+        margin: 35px 0px 45px;
+      }
+
+      .actions {
+        display: flex;
+
+        button {
+          min-width: 170px;
+          height: 40px;
+          cursor: pointer;
+          font-family: 'Public Sans', sans-serif;
+          font-size: 14px;
+          font-weight: 600;
+
+          &.primary {
+            background-color: $blue;
+            color: white;
+            border: none;
+          }
+
+          &.secondary {
+            border: solid 1px $blue;
+            background-color: white;
+            color: $blue;
+          }
+
+          &:first-of-type {
+            margin-right: 25px;
+          }
+        }
+      }
+    }
+
+    img {
+      margin-left: 100px;
+      max-width: 800px;
+    }
+  }
+}
