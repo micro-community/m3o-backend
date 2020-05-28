@@ -30,6 +30,18 @@ export default class App extends React.Component {
 
           <img src={HeaderImg} alt='' />
         </div>
+
+        <div className='runtime'>
+          <div className='inner'>
+            <h2>Explore the Micro runtime</h2>
+
+            <div className='cards'>
+              <div className='card' />
+              <div className='card' />
+              <div className='card' />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
