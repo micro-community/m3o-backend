@@ -6,8 +6,34 @@ $black: #1A1A1F;
 $gray: #424242;
 $blue: #3D87F7;
 
-h1, h2, h3, h4 {
+h1, h2, h3, h4, h5, p {
   color: $black;
+}
+
+button {
+  width: 170px;
+  height: 40px;
+  cursor: pointer;
+  font-family: 'Public Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+
+  &.primary {
+    background-color: $blue;
+    color: white;
+    border: none;
+  }
+
+  &.secondary {
+    border: solid 1px $blue;
+    background-color: white;
+    color: $blue;
+  }
+
+  &:first-of-type {
+    margin-right: 25px;
+  }
 }
 
 .App {
@@ -82,32 +108,6 @@ h1, h2, h3, h4 {
 
       .actions {
         display: flex;
-
-        button {
-          width: 170px;
-          height: 40px;
-          cursor: pointer;
-          font-family: 'Public Sans', sans-serif;
-          font-size: 14px;
-          font-weight: 600;
-          outline: none;
-
-          &.primary {
-            background-color: $blue;
-            color: white;
-            border: none;
-          }
-
-          &.secondary {
-            border: solid 1px $blue;
-            background-color: white;
-            color: $blue;
-          }
-
-          &:first-of-type {
-            margin-right: 25px;
-          }
-        }
       }
     }
 
@@ -193,9 +193,29 @@ h1, h2, h3, h4 {
         margin-bottom: 30px;
 
         .card {
-          min-height: 400px;
+          display: flex;
+          flex-direction: column;
           background-color: white;
           box-shadow: 0px 5px 5px 0px rgba(0, 0, 0, 0.04);
+          padding: 40px;
+          text-align: left;
+
+          img {
+            height: 50px;
+            width: 50px;
+          }
+
+          h5 {
+            font-weight: 600;
+            font-size: 18px;
+            margin: 30px 0px;
+          }
+
+          p {
+            margin: 0px;
+            font-size: 15px;
+            line-height: 1.6;
+          }
         }
       }
     }
@@ -204,7 +224,7 @@ h1, h2, h3, h4 {
       margin-top: 40px;
     }
     
-    @media only screen and (max-width: $mobileWidth * 1.3) {
+    @media only screen and (max-width: $mobileWidth * 1.5) {
       background-image: unset;
       background-color: #F9F9F9;
       margin-top: 40px;
@@ -220,9 +240,69 @@ h1, h2, h3, h4 {
           .card {
             min-width: 10px;
             margin-bottom: 30px;
-
           }
         }
+      }
+    }
+  }
+
+  .github-actions {
+    padding: 0px 50px;
+    display: grid;
+    grid-template-columns: 4fr 6fr;
+    grid-gap: 80px;
+
+    max-width: $maxWidth;
+    margin: 100px auto;
+
+    .left {
+      margin-top: auto;
+      margin-bottom: auto;
+      text-align: left;
+
+      i {
+        color: $blue;
+        text-transform: uppercase;
+        font-style: normal;
+        font-weight: bold;
+      }
+
+      h2 {
+        font-size: 32px;
+        font-weight: 500;
+        line-height: 1.4;
+        margin-top: 10px;
+      }
+
+      p {
+        font-size: 16px;
+        line-height: 1.7;
+        margin-bottom: 40px;
+      }
+
+      button {
+        min-width: 180px;
+      }
+    }
+
+    img {
+      margin-left: auto;
+    }
+
+    @media only screen and (max-width: $tabletWidth) {
+      display: flex;
+      flex-direction: column;
+
+      .left {
+        h2 {
+          font-size: 26px;
+        }
+      }
+
+      img {
+        margin-top: 40px;
+        width: 100%;
+        margin: 20px -10px;
       }
     }
   }

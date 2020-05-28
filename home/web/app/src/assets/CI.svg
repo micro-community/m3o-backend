@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="629px" height="524px" viewBox="0 0 629 524" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <!-- Generator: Sketch 60.1 (88133) - https://sketch.com -->
+    <title>Group 9</title>
+    <desc>Created with Sketch.</desc>
+    <defs>
+        <rect id="path-1" x="0" y="0" width="609" height="504" rx="6"></rect>
+        <filter x="-2.7%" y="-2.7%" width="105.4%" height="106.5%" filterUnits="objectBoundingBox" id="filter-2">
+            <feMorphology radius="1" operator="dilate" in="SourceAlpha" result="shadowSpreadOuter1"></feMorphology>
+            <feOffset dx="0" dy="3" in="shadowSpreadOuter1" result="shadowOffsetOuter1"></feOffset>
+            <feGaussianBlur stdDeviation="4" in="shadowOffsetOuter1" result="shadowBlurOuter1"></feGaussianBlur>
+            <feColorMatrix values="0 0 0 0 0   0 0 0 0 0   0 0 0 0 0  0 0 0 0.1 0" type="matrix" in="shadowBlurOuter1"></feColorMatrix>
+        </filter>
+    </defs>
+    <g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="Desktop-HD-Copy" transform="translate(-682.000000, -1432.000000)">
+            <g id="Group-9" transform="translate(692.000000, 1439.000000)">
+                <g id="Rectangle">
+                    <use fill="black" fill-opacity="1" filter="url(#filter-2)" xlink:href="#path-1"></use>
+                    <use fill="#FFFFFF" fill-rule="evenodd" xlink:href="#path-1"></use>
+                </g>
+                <text id="1-name:-M3O-2-3-on:" font-family="SFProText-Regular, SF Pro Text" font-size="12" font-weight="normal" line-spacing="21">
+                    <tspan x="36" y="61" fill="#979797">1</tspan>
+                    <tspan x="41.5957031" y="61" fill="#3F3F3F"> 	</tspan>
+                    <tspan x="64" y="61" fill="#52A350">name</tspan>
+                    <tspan x="94.9199219" y="61" fill="#BC3538">:</tspan>
+                    <tspan x="98.4824219" y="61" fill="#3F3F3F"> </tspan>
+                    <tspan x="101.869141" y="61" fill="#032F62">M3O</tspan>
+                    <tspan x="129.138672" y="61" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="82" fill="#979797">2</tspan>
+                    <tspan x="43.2480469" y="82" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="103" fill="#979797">3</tspan>
+                    <tspan x="43.5234375" y="103" fill="#3F3F3F">	</tspan>
+                    <tspan x="64" y="103" fill="#52A350">on</tspan>
+                    <tspan x="78.0917969" y="103" fill="#BC3538">:</tspan>
+                    <tspan x="81.6542969" y="103" fill="#3F3F3F"> </tspan>
+                    <tspan x="36" y="124" fill="#979797">4</tspan>
+                    <tspan x="43.7226562" y="124" fill="#3F3F3F">	    </tspan>
+                    <tspan x="77.546875" y="124" fill="#52A350">push</tspan>
+                    <tspan x="105.273438" y="124" fill="#BC3538">:</tspan>
+                    <tspan x="108.835938" y="124" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="145" fill="#979797">5</tspan>
+                    <tspan x="43.4238281" y="145" fill="#3F3F3F">	    </tspan>
+                    <tspan x="77.546875" y="145" fill="#52A350">pull_request</tspan>
+                    <tspan x="146.523438" y="145" fill="#BC3538">:</tspan>
+                    <tspan x="150.085938" y="145" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="166" fill="#979797">6</tspan>
+                    <tspan x="43.6464844" y="166" fill="#3F3F3F">	        </tspan>
+                    <tspan x="91.09375" y="166" fill="#52A350">branches</tspan>
+                    <tspan x="143.634766" y="166" fill="#BC3538">:</tspan>
+                    <tspan x="147.197266" y="166" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="187" fill="#979797">7</tspan>
+                    <tspan x="42.8378906" y="187" fill="#3F3F3F">	        </tspan>
+                    <tspan x="91.09375" y="187" fill="#032F62">-</tspan>
+                    <tspan x="96.7539062" y="187" fill="#3F3F3F"> </tspan>
+                    <tspan x="100.140625" y="187" fill="#032F62">master</tspan>
+                    <tspan x="139.269531" y="187" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="208" fill="#979797">8</tspan>
+                    <tspan x="43.6640625" y="208" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="229" fill="#979797">9</tspan>
+                    <tspan x="43.6464844" y="229" fill="#3F3F3F">	</tspan>
+                    <tspan x="64" y="229" fill="#52A350">jobs</tspan>
+                    <tspan x="87.6953125" y="229" fill="#BC3538">:</tspan>
+                    <tspan x="91.2578125" y="229" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="250" fill="#979797">10</tspan>
+                    <tspan x="49.1542969" y="250" fill="#3F3F3F">	    </tspan>
+                    <tspan x="77.546875" y="250" fill="#52A350">build</tspan>
+                    <tspan x="105.273438" y="250" fill="#BC3538">:</tspan>
+                    <tspan x="108.835938" y="250" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="271" fill="#979797">11</tspan>
+                    <tspan x="47.1914062" y="271" fill="#3F3F3F">	        </tspan>
+                    <tspan x="91.09375" y="271" fill="#52A350">runs-on</tspan>
+                    <tspan x="135.707031" y="271" fill="#BC3538">:</tspan>
+                    <tspan x="139.269531" y="271" fill="#3F3F3F"> </tspan>
+                    <tspan x="142.65625" y="271" fill="#032F62">ubuntu-latest</tspan>
+                    <tspan x="219.572266" y="271" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="292" fill="#979797">12</tspan>
+                    <tspan x="48.84375" y="292" fill="#3F3F3F">	        </tspan>
+                    <tspan x="91.09375" y="292" fill="#52A350">steps</tspan>
+                    <tspan x="122.183594" y="292" fill="#BC3538">:</tspan>
+                    <tspan x="125.746094" y="292" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="313" fill="#979797">13</tspan>
+                    <tspan x="49.1191406" y="313" fill="#3F3F3F">	        </tspan>
+                    <tspan x="91.09375" y="313" fill="#032F62">-</tspan>
+                    <tspan x="96.7539062" y="313" fill="#3F3F3F"> </tspan>
+                    <tspan x="100.140625" y="313" fill="#52A350">name</tspan>
+                    <tspan x="131.060547" y="313" fill="#BC3538">:</tspan>
+                    <tspan x="134.623047" y="313" fill="#3F3F3F"> </tspan>
+                    <tspan x="138.009766" y="313" fill="#032F62">Check</tspan>
+                    <tspan x="173.810547" y="313" fill="#3F3F3F"> </tspan>
+                    <tspan x="177.197266" y="313" fill="#032F62">out</tspan>
+                    <tspan x="195.654297" y="313" fill="#3F3F3F"> </tspan>
+                    <tspan x="199.041016" y="313" fill="#032F62">repository</tspan>
+                    <tspan x="256.638672" y="313" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="334" fill="#979797">14</tspan>
+                    <tspan x="49.3183594" y="334" fill="#3F3F3F">	           </tspan>
+                    <tspan x="101.253906" y="334" fill="#52A350">uses</tspan>
+                    <tspan x="127.679688" y="334" fill="#BC3538">:</tspan>
+                    <tspan x="131.242188" y="334" fill="#3F3F3F"> </tspan>
+                    <tspan x="134.628906" y="334" fill="#032F62">actions/checkout@v2</tspan>
+                    <tspan x="256.796875" y="334" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="355" fill="#979797">15</tspan>
+                    <tspan x="49.0195312" y="355" fill="#3F3F3F">	        </tspan>
+                    <tspan x="91.09375" y="355" fill="#032F62">-</tspan>
+                    <tspan x="96.7539062" y="355" fill="#3F3F3F"> </tspan>
+                    <tspan x="100.140625" y="355" fill="#52A350">name</tspan>
+                    <tspan x="131.060547" y="355" fill="#BC3538">:</tspan>
+                    <tspan x="134.623047" y="355" fill="#3F3F3F"> </tspan>
+                    <tspan x="138.009766" y="355" fill="#032F62">Build</tspan>
+                    <tspan x="166.251953" y="355" fill="#3F3F3F"> </tspan>
+                    <tspan x="169.638672" y="355" fill="#032F62">Services</tspan>
+                    <tspan x="218.019531" y="355" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="376" fill="#979797">16</tspan>
+                    <tspan x="49.2421875" y="376" fill="#3F3F3F">	          </tspan>
+                    <tspan x="97.8671875" y="376" fill="#52A350">uses</tspan>
+                    <tspan x="124.292969" y="376" fill="#BC3538">:</tspan>
+                    <tspan x="127.855469" y="376" fill="#3F3F3F"> </tspan>
+                    <tspan x="131.242188" y="376" fill="#032F62">micro/actions@2.0.0</tspan>
+                    <tspan x="248.535156" y="376" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="397" fill="#979797">17</tspan>
+                    <tspan x="48.4335938" y="397" fill="#3F3F3F">	         </tspan>
+                    <tspan x="94.4804688" y="397" fill="#52A350">with</tspan>
+                    <tspan x="118.210938" y="397" fill="#BC3538">:</tspan>
+                    <tspan x="121.773438" y="397" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="418" fill="#979797">18</tspan>
+                    <tspan x="49.2597656" y="418" fill="#3F3F3F">	            </tspan>
+                    <tspan x="104.640625" y="418" fill="#52A350">CLIENT_ID</tspan>
+                    <tspan x="164.212891" y="418" fill="#BC3538">:</tspan>
+                    <tspan x="167.775391" y="418" fill="#3F3F3F"> </tspan>
+                    <tspan x="171.162109" y="418" fill="#032F62">${{</tspan>
+                    <tspan x="188.107422" y="418" fill="#3F3F3F"> </tspan>
+                    <tspan x="191.494141" y="418" fill="#032F62">secrets.M3O_CLIENT_ID</tspan>
+                    <tspan x="329.183594" y="418" fill="#3F3F3F"> </tspan>
+                    <tspan x="332.570312" y="418" fill="#032F62">}}</tspan>
+                    <tspan x="341.734375" y="418" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="439" fill="#979797">19</tspan>
+                    <tspan x="49.2421875" y="439" fill="#3F3F3F">	            </tspan>
+                    <tspan x="104.640625" y="439" fill="#52A350">CLIENT_SECRET</tspan>
+                    <tspan x="198.261719" y="439" fill="#BC3538">:</tspan>
+                    <tspan x="201.824219" y="439" fill="#3F3F3F"> </tspan>
+                    <tspan x="205.210938" y="439" fill="#032F62">${{ secrets.M3O_CLIENT_SECRET }}</tspan>
+                    <tspan x="409.832031" y="439" fill="#3F3F3F"></tspan>
+                    <tspan x="36" y="460" fill="#979797">20</tspan>
+                    <tspan x="50.8066406" y="460" fill="#3F3F3F">	            </tspan>
+                    <tspan x="104.640625" y="460" fill="#52A350">GITHUB_TOKEN</tspan>
+                    <tspan x="196.246094" y="460" fill="#BC3538">:</tspan>
+                    <tspan x="199.808594" y="460" fill="#3F3F3F"> </tspan>
+                    <tspan x="203.195312" y="460" fill="#032F62">${{ secrets.GITHUB_TOKEN }}</tspan>
+                </text>
+                <text id="ci.yaml" font-family="SFProText-Medium, SF Pro Text" font-size="12" font-weight="400" fill="#9B9B9B">
+                    <tspan x="284" y="28">ci.yaml</tspan>
+                </text>
+            </g>
+        </g>
+    </g>
+</svg>
