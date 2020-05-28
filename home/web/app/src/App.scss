@@ -1,5 +1,6 @@
 $maxWidth: 1200px;
-$outerPadding: 50px;
+$tabletWidth: 900px;
+$mobileWidth: 600px;
 
 $black: #1A1A1F;
 $gray: #424242;
@@ -12,7 +13,7 @@ h1, h2, h3, h4 {
 .App {
   text-align: center;
   font-family: 'Public Sans', sans-serif;
-  padding: ($outerPadding / 2) $outerPadding;
+  padding: 25px 50px; 
 
   header {
     display: flex;
@@ -34,7 +35,7 @@ h1, h2, h3, h4 {
         color: $gray;
         text-decoration: none;
         font-size: 14px;
-        margin-left:$outerPadding;
+        margin-left: 50px;
         font-weight: 500;
 
         &.login {
@@ -78,12 +79,13 @@ h1, h2, h3, h4 {
         display: flex;
 
         button {
-          min-width: 170px;
+          width: 170px;
           height: 40px;
           cursor: pointer;
           font-family: 'Public Sans', sans-serif;
           font-size: 14px;
           font-weight: 600;
+          outline: none;
 
           &.primary {
             background-color: $blue;
@@ -108,5 +110,57 @@ h1, h2, h3, h4 {
       margin-left: 100px;
       max-width: 800px;
     }
+
+
+    @media only screen and (max-width: $tabletWidth) {
+      padding: 50px 0px;
+      .left {
+        max-width: 550px;
+        min-width: inherit;
+
+        h1 {
+          font-size: 35px;
+        }
+
+        .actions {
+          button {
+            height: 50px;
+            min-width: 200px;
+          }
+        }
+      }
+
+      img {
+        display: none;
+        margin: 0px auto 25px 0px;
+        height: 200px;
+        object-fit: contain;
+      }
+    }
+
+    @media only screen and (max-width: $mobileWidth) {
+      padding: 30px 0px;
+  
+      .left {
+        width: inherit;
+  
+        h1 {
+          font-size: 30px;
+        }
+
+        .actions {
+          flex-direction: column;
+
+          button {
+            width: 100%;
+            margin-bottom: 20px;
+          }
+        }
+      }
+    }  
+  }
+
+  @media only screen and (max-width: $mobileWidth) {
+    padding: 10px 35px;
   }
 }
