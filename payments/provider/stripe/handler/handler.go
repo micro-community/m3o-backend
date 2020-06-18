@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/micro/go-micro/v2"
@@ -21,6 +22,7 @@ type Handler struct {
 // NewHandler returns an initialised Handler, it will error if any of
 // the required enviroment variables are not set
 func NewHandler(srv micro.Service) *Handler {
+	fmt.Println(srv.Options().Config.Get("micro", "payments", "stripe", "api_key").StringMap(map[string]string{}))
 	apiKey := srv.Options().Config.Get("micro", "payments", "stripe", "api_key").String("")
 	if len(apiKey) == 0 {
 		log.Fatalf("Missing required config: micro.payments.stripe.api_key")
