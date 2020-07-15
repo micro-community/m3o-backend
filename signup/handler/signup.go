@@ -150,10 +150,10 @@ func (e *Signup) SendVerificationEmail(ctx context.Context,
 	// Send email
 	// @todo send different emails based on if the account already exists
 	// ie. registration vs login email.
-	err = e.sendEmail(req.Email, k)
-	if err != nil {
-		return err
-	}
+	// err = e.sendEmail(req.Email, k)
+	// if err != nil {
+	// 	return err
+	// }
 
 	return nil
 }
@@ -244,6 +244,7 @@ func (e *Signup) Verify(ctx context.Context,
 	// If the user has a secret it means the account is ready
 	// to be used, so we log them in.
 	if len(secret) > 0 {
+		logger.Infof("Secret found")
 		ns, err := e.getNamespace(req.Email)
 		if err != store.ErrNotFound {
 			return err
@@ -305,32 +306,32 @@ func (e *Signup) CompleteSignup(ctx context.Context, req *signup.CompleteSignupR
 		return errors.New("invalid token")
 	}
 
-	_, err = e.paymentService.CreatePaymentMethod(ctx, &paymentsproto.CreatePaymentMethodRequest{
-		CustomerId:   req.Email,
-		CustomerType: "user",
-		Id:           req.PaymentMethodID,
-	})
-	if err != nil {
-		return err
-	}
+	// _, err = e.paymentService.CreatePaymentMethod(ctx, &paymentsproto.CreatePaymentMethodRequest{
+	// 	CustomerId:   req.Email,
+	// 	CustomerType: "user",
+	// 	Id:           req.PaymentMethodID,
+	// })
+	// if err != nil {
+	// 	return err
+	// }
 
-	_, err = e.paymentService.SetDefaultPaymentMethod(ctx, &paymentsproto.SetDefaultPaymentMethodRequest{
-		CustomerId:      req.Email,
-		CustomerType:    "user",
-		PaymentMethodId: req.PaymentMethodID,
-	})
-	if err != nil {
-		return err
-	}
+	// _, err = e.paymentService.SetDefaultPaymentMethod(ctx, &paymentsproto.SetDefaultPaymentMethodRequest{
+	// 	CustomerId:      req.Email,
+	// 	CustomerType:    "user",
+	// 	PaymentMethodId: req.PaymentMethodID,
+	// })
+	// if err != nil {
+	// 	return err
+	// }
 
-	_, err = e.paymentService.CreateSubscription(ctx, &paymentsproto.CreateSubscriptionRequest{
-		CustomerId:   req.Email,
-		CustomerType: "user",
-		PlanId:       e.planID,
-	})
-	if err != nil {
-		return err
-	}
+	// _, err = e.paymentService.CreateSubscription(ctx, &paymentsproto.CreateSubscriptionRequest{
+	// 	CustomerId:   req.Email,
+	// 	CustomerType: "user",
+	// 	PlanId:       e.planID,
+	// })
+	// if err != nil {
+	// 	return err
+	// }
 
 	// take secret from the request
 	secret := req.Secret
@@ -344,30 +345,30 @@ func (e *Signup) CompleteSignup(ctx context.Context, req *signup.CompleteSignupR
 	if err != nil {
 		return err
 	}
-	ns, err := e.createNamespace(ctx)
-	if err != nil {
-		return err
-	}
-	err = e.saveNamespace(req.Email, ns)
-	if err != nil {
-		return err
-	}
-	rsp.Namespace = ns
+	// ns, err := e.createNamespace(ctx)
+	// if err != nil {
+	// 	return err
+	// }
+	// err = e.saveNamespace(req.Email, ns)
+	// if err != nil {
+	// 	return err
+	// }
+	// rsp.Namespace = ns
 
-	_, err = e.auth.Generate(req.Email, auth.WithSecret(secret), auth.WithIssuer(ns))
-	if err != nil {
-		return err
-	}
-	t, err := e.auth.Token(auth.WithCredentials(req.Email, secret), auth.WithTokenIssuer(ns))
-	if err != nil {
-		return err
-	}
-	rsp.AuthToken = &signup.AuthToken{
-		AccessToken:  t.AccessToken,
-		RefreshToken: t.RefreshToken,
-		Expiry:       t.Expiry.Unix(),
-		Created:      t.Created.Unix(),
-	}
+	// _, err = e.auth.Generate(req.Email, auth.WithSecret(secret), auth.WithIssuer(ns))
+	// if err != nil {
+	// 	return err
+	// }
+	// t, err := e.auth.Token(auth.WithCredentials(req.Email, secret), auth.WithTokenIssuer(ns))
+	// if err != nil {
+	// 	return err
+	// }
+	// rsp.AuthToken = &signup.AuthToken{
+	// 	AccessToken:  t.AccessToken,
+	// 	RefreshToken: t.RefreshToken,
+	// 	Expiry:       t.Expiry.Unix(),
+	// 	Created:      t.Created.Unix(),
+	// }
 	return nil
 }
 
