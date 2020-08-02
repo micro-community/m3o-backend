@@ -6,9 +6,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/micro/go-micro/v2/config"
-	log "github.com/micro/go-micro/v2/logger"
-	"github.com/micro/go-micro/v2/store"
+	log "github.com/micro/go-micro/v3/logger"
+	"github.com/micro/go-micro/v3/store"
+	"github.com/micro/micro/v3/service/config"
+	mstore "github.com/micro/micro/v3/service/store"
 
 	"github.com/google/uuid"
 	alert "github.com/m3o/services/alert/proto/alert"
@@ -20,7 +21,6 @@ const (
 )
 
 type Alert struct {
-	store       store.Store
 	slackClient *slack.Client
 }
 
@@ -40,7 +40,6 @@ func NewAlert(store store.Store) *Alert {
 	}
 
 	return &Alert{
-		store:       store,
 		slackClient: slack.New(slackToken),
 	}
 }
@@ -79,7 +78,7 @@ func (e *Alert) saveEvent(ev *event) error {
 		return err
 	}
 
-	return e.store.Write(&store.Record{
+	return mstore.Write(&store.Record{
 		Key:   storePrefixEvents + ev.ID,
 		Value: bytes})
 }
