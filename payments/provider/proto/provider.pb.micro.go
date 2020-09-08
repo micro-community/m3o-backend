@@ -14,8 +14,6 @@ import (
 	api "github.com/micro/go-micro/v3/api"
 	client "github.com/micro/go-micro/v3/client"
 	server "github.com/micro/go-micro/v3/server"
-	microClient "github.com/micro/micro/v3/service/client"
-	microServer "github.com/micro/micro/v3/service/server"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -34,8 +32,6 @@ var _ api.Endpoint
 var _ context.Context
 var _ client.Option
 var _ server.Option
-var _ = microServer.Handle
-var _ = microClient.Call
 
 // Api Endpoints for Provider service
 
@@ -51,6 +47,8 @@ type ProviderService interface {
 	ListPlans(ctx context.Context, in *ListPlansRequest, opts ...client.CallOption) (*ListPlansResponse, error)
 	CreateCustomer(ctx context.Context, in *CreateCustomerRequest, opts ...client.CallOption) (*CreateCustomerResponse, error)
 	CreateSubscription(ctx context.Context, in *CreateSubscriptionRequest, opts ...client.CallOption) (*CreateSubscriptionResponse, error)
+	// UpdateSubscription is curretly used to update the quantity of a subscription.
+	UpdateSubscription(ctx context.Context, in *UpdateSubscriptionRequest, opts ...client.CallOption) (*UpdateSubscriptionResponse, error)
 	ListSubscriptions(ctx context.Context, in *ListSubscriptionsRequest, opts ...client.CallOption) (*ListSubscriptionsResponse, error)
 	CreatePaymentMethod(ctx context.Context, in *CreatePaymentMethodRequest, opts ...client.CallOption) (*CreatePaymentMethodResponse, error)
 	ListPaymentMethods(ctx context.Context, in *ListPaymentMethodsRequest, opts ...client.CallOption) (*ListPaymentMethodsResponse, error)
@@ -59,17 +57,21 @@ type ProviderService interface {
 }
 
 type providerService struct {
+	c    client.Client
 	name string
 }
 
-func NewProviderService(name string) ProviderService {
-	return &providerService{name: name}
+func NewProviderService(name string, c client.Client) ProviderService {
+	return &providerService{
+		c:    c,
+		name: name,
+	}
 }
 
 func (c *providerService) CreateProduct(ctx context.Context, in *CreateProductRequest, opts ...client.CallOption) (*CreateProductResponse, error) {
-	req := microClient.NewRequest(c.name, "Provider.CreateProduct", in)
+	req := c.c.NewRequest(c.name, "Provider.CreateProduct", in)
 	out := new(CreateProductResponse)
-	err := microClient.Call(ctx, req, out, opts...)
+	err := c.c.Call(ctx, req, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -77,9 +79,9 @@ func (c *providerService) CreateProduct(ctx context.Context, in *CreateProductRe
 }
 
 func (c *providerService) CreatePlan(ctx context.Context, in *CreatePlanRequest, opts ...client.CallOption) (*CreatePlanResponse, error) {
-	req := microClient.NewRequest(c.name, "Provider.CreatePlan", in)
+	req := c.c.NewRequest(c.name, "Provider.CreatePlan", in)
 	out := new(CreatePlanResponse)
-	err := microClient.Call(ctx, req, out, opts...)
+	err := c.c.Call(ctx, req, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -87,9 +89,9 @@ func (c *providerService) CreatePlan(ctx context.Context, in *CreatePlanRequest,
 }
 
 func (c *providerService) ListPlans(ctx context.Context, in *ListPlansRequest, opts ...client.CallOption) (*ListPlansResponse, error) {
-	req := microClient.NewRequest(c.name, "Provider.ListPlans", in)
+	req := c.c.NewRequest(c.name, "Provider.ListPlans", in)
 	out := new(ListPlansResponse)
-	err := microClient.Call(ctx, req, out, opts...)
+	err := c.c.Call(ctx, req, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -97,9 +99,9 @@ func (c *providerService) ListPlans(ctx context.Context, in *ListPlansRequest, o
 }
 
 func (c *providerService) CreateCustomer(ctx context.Context, in *CreateCustomerRequest, opts ...client.CallOption) (*CreateCustomerResponse, error) {
-	req := microClient.NewRequest(c.name, "Provider.CreateCustomer", in)
+	req := c.c.NewRequest(c.name, "Provider.CreateCustomer", in)
 	out := new(CreateCustomerResponse)
-	err := microClient.Call(ctx, req, out, opts...)
+	err := c.c.Call(ctx, req, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -107,9 +109,19 @@ func (c *providerService) CreateCustomer(ctx context.Context, in *CreateCustomer
 }
 
 func (c *providerService) CreateSubscription(ctx context.Context, in *CreateSubscriptionRequest, opts ...client.CallOption) (*CreateSubscriptionResponse, error) {
-	req := microClient.NewRequest(c.name, "Provider.CreateSubscription", in)
+	req := c.c.NewRequest(c.name, "Provider.CreateSubscription", in)
 	out := new(CreateSubscriptionResponse)
-	err := microClient.Call(ctx, req, out, opts...)
+	err := c.c.Call(ctx, req, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerService) UpdateSubscription(ctx context.Context, in *UpdateSubscriptionRequest, opts ...client.CallOption) (*UpdateSubscriptionResponse, error) {
+	req := c.c.NewRequest(c.name, "Provider.UpdateSubscription", in)
+	out := new(UpdateSubscriptionResponse)
+	err := c.c.Call(ctx, req, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -117,9 +129,9 @@ func (c *providerService) CreateSubscription(ctx context.Context, in *CreateSubs
 }
 
 func (c *providerService) ListSubscriptions(ctx context.Context, in *ListSubscriptionsRequest, opts ...client.CallOption) (*ListSubscriptionsResponse, error) {
-	req := microClient.NewRequest(c.name, "Provider.ListSubscriptions", in)
+	req := c.c.NewRequest(c.name, "Provider.ListSubscriptions", in)
 	out := new(ListSubscriptionsResponse)
-	err := microClient.Call(ctx, req, out, opts...)
+	err := c.c.Call(ctx, req, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -127,9 +139,9 @@ func (c *providerService) ListSubscriptions(ctx context.Context, in *ListSubscri
 }
 
 func (c *providerService) CreatePaymentMethod(ctx context.Context, in *CreatePaymentMethodRequest, opts ...client.CallOption) (*CreatePaymentMethodResponse, error) {
-	req := microClient.NewRequest(c.name, "Provider.CreatePaymentMethod", in)
+	req := c.c.NewRequest(c.name, "Provider.CreatePaymentMethod", in)
 	out := new(CreatePaymentMethodResponse)
-	err := microClient.Call(ctx, req, out, opts...)
+	err := c.c.Call(ctx, req, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -137,9 +149,9 @@ func (c *providerService) CreatePaymentMethod(ctx context.Context, in *CreatePay
 }
 
 func (c *providerService) ListPaymentMethods(ctx context.Context, in *ListPaymentMethodsRequest, opts ...client.CallOption) (*ListPaymentMethodsResponse, error) {
-	req := microClient.NewRequest(c.name, "Provider.ListPaymentMethods", in)
+	req := c.c.NewRequest(c.name, "Provider.ListPaymentMethods", in)
 	out := new(ListPaymentMethodsResponse)
-	err := microClient.Call(ctx, req, out, opts...)
+	err := c.c.Call(ctx, req, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -147,9 +159,9 @@ func (c *providerService) ListPaymentMethods(ctx context.Context, in *ListPaymen
 }
 
 func (c *providerService) SetDefaultPaymentMethod(ctx context.Context, in *SetDefaultPaymentMethodRequest, opts ...client.CallOption) (*SetDefaultPaymentMethodResponse, error) {
-	req := microClient.NewRequest(c.name, "Provider.SetDefaultPaymentMethod", in)
+	req := c.c.NewRequest(c.name, "Provider.SetDefaultPaymentMethod", in)
 	out := new(SetDefaultPaymentMethodResponse)
-	err := microClient.Call(ctx, req, out, opts...)
+	err := c.c.Call(ctx, req, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -157,9 +169,9 @@ func (c *providerService) SetDefaultPaymentMethod(ctx context.Context, in *SetDe
 }
 
 func (c *providerService) DeletePaymentMethod(ctx context.Context, in *DeletePaymentMethodRequest, opts ...client.CallOption) (*DeletePaymentMethodResponse, error) {
-	req := microClient.NewRequest(c.name, "Provider.DeletePaymentMethod", in)
+	req := c.c.NewRequest(c.name, "Provider.DeletePaymentMethod", in)
 	out := new(DeletePaymentMethodResponse)
-	err := microClient.Call(ctx, req, out, opts...)
+	err := c.c.Call(ctx, req, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +186,8 @@ type ProviderHandler interface {
 	ListPlans(context.Context, *ListPlansRequest, *ListPlansResponse) error
 	CreateCustomer(context.Context, *CreateCustomerRequest, *CreateCustomerResponse) error
 	CreateSubscription(context.Context, *CreateSubscriptionRequest, *CreateSubscriptionResponse) error
+	// UpdateSubscription is curretly used to update the quantity of a subscription.
+	UpdateSubscription(context.Context, *UpdateSubscriptionRequest, *UpdateSubscriptionResponse) error
 	ListSubscriptions(context.Context, *ListSubscriptionsRequest, *ListSubscriptionsResponse) error
 	CreatePaymentMethod(context.Context, *CreatePaymentMethodRequest, *CreatePaymentMethodResponse) error
 	ListPaymentMethods(context.Context, *ListPaymentMethodsRequest, *ListPaymentMethodsResponse) error
@@ -181,13 +195,14 @@ type ProviderHandler interface {
 	DeletePaymentMethod(context.Context, *DeletePaymentMethodRequest, *DeletePaymentMethodResponse) error
 }
 
-func RegisterProviderHandler(hdlr ProviderHandler, opts ...server.HandlerOption) error {
+func RegisterProviderHandler(s server.Server, hdlr ProviderHandler, opts ...server.HandlerOption) error {
 	type provider interface {
 		CreateProduct(ctx context.Context, in *CreateProductRequest, out *CreateProductResponse) error
 		CreatePlan(ctx context.Context, in *CreatePlanRequest, out *CreatePlanResponse) error
 		ListPlans(ctx context.Context, in *ListPlansRequest, out *ListPlansResponse) error
 		CreateCustomer(ctx context.Context, in *CreateCustomerRequest, out *CreateCustomerResponse) error
 		CreateSubscription(ctx context.Context, in *CreateSubscriptionRequest, out *CreateSubscriptionResponse) error
+		UpdateSubscription(ctx context.Context, in *UpdateSubscriptionRequest, out *UpdateSubscriptionResponse) error
 		ListSubscriptions(ctx context.Context, in *ListSubscriptionsRequest, out *ListSubscriptionsResponse) error
 		CreatePaymentMethod(ctx context.Context, in *CreatePaymentMethodRequest, out *CreatePaymentMethodResponse) error
 		ListPaymentMethods(ctx context.Context, in *ListPaymentMethodsRequest, out *ListPaymentMethodsResponse) error
@@ -198,7 +213,7 @@ func RegisterProviderHandler(hdlr ProviderHandler, opts ...server.HandlerOption)
 		provider
 	}
 	h := &providerHandler{hdlr}
-	return microServer.Handle(microServer.NewHandler(&Provider{h}, opts...))
+	return s.Handle(s.NewHandler(&Provider{h}, opts...))
 }
 
 type providerHandler struct {
@@ -223,6 +238,10 @@ func (h *providerHandler) CreateCustomer(ctx context.Context, in *CreateCustomer
 
 func (h *providerHandler) CreateSubscription(ctx context.Context, in *CreateSubscriptionRequest, out *CreateSubscriptionResponse) error {
 	return h.ProviderHandler.CreateSubscription(ctx, in, out)
+}
+
+func (h *providerHandler) UpdateSubscription(ctx context.Context, in *UpdateSubscriptionRequest, out *UpdateSubscriptionResponse) error {
+	return h.ProviderHandler.UpdateSubscription(ctx, in, out)
 }
 
 func (h *providerHandler) ListSubscriptions(ctx context.Context, in *ListSubscriptionsRequest, out *ListSubscriptionsResponse) error {

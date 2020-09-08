@@ -7,26 +7,28 @@ import (
 
 	status "github.com/m3o/services/status/proto/status"
 	api "github.com/micro/go-micro/v3/api/proto"
-	proto "github.com/micro/go-micro/v3/debug/service/proto"
+	goclient "github.com/micro/go-micro/v3/client"
+	"github.com/micro/go-micro/v3/errors"
+	proto "github.com/micro/micro/v3/proto/debug"
 	"github.com/micro/micro/v3/service/client"
 )
 
 var (
 	defaultServices = []string{
-		"go.micro.api", // If this is down then this wouldn't even get routed to...
-		"go.micro.auth",
-		"go.micro.broker",
-		"go.micro.config",
-		"go.micro.debug",
-		"go.micro.network",
-		"go.micro.proxy",
-		"go.micro.registry",
-		"go.micro.runtime",
-		"go.micro.store",
+		"api", // If this is down then this wouldn't even get routed to...
+		"auth",
+		"broker",
+		"config",
+		"debug",
+		"network",
+		"proxy",
+		"registry",
+		"runtime",
+		"store",
 	}
 )
 
-type statusHandler struct {
+type Status struct {
 	monitoredServices []string
 }
 
@@ -36,11 +38,11 @@ func NewStatusHandler(services []string) status.StatusHandler {
 	if len(services) > 0 {
 		svcs = services
 	}
-	return &statusHandler{monitoredServices: svcs}
+	return &Status{monitoredServices: svcs}
 }
 
 // Call is called by the API as /status/call with post body {"name": "foo"}
-func (e *statusHandler) Call(ctx context.Context, req *api.Request, rsp *api.Response) error {
+func (e *Status) Call(ctx context.Context, req *api.Request, rsp *api.Response) error {
 	response := map[string]string{}
 	overallOK := true
 
@@ -49,7 +51,7 @@ func (e *statusHandler) Call(ctx context.Context, req *api.Request, rsp *api.Res
 		req := client.NewRequest(serverName, "Debug.Health", &proto.HealthRequest{})
 		rsp := &proto.HealthResponse{}
 
-		err := client.Call(context.TODO(), req, rsp)
+		err := client.Call(context.TODO(), req, rsp, goclient.WithAuthToken())
 		status := "OK"
 		if err != nil || rsp.Status != "ok" {
 			status = "NOT_HEALTHY"
@@ -65,11 +67,12 @@ func (e *statusHandler) Call(ctx context.Context, req *api.Request, rsp *api.Res
 	}
 
 	b, _ := json.Marshal(response)
-	statusCode := 200
 	if !overallOK {
-		statusCode = 500
+		rsp.StatusCode = 500
+		rsp.Body = string(b)
+		return errors.New("status.error", rsp.Body, rsp.StatusCode)
 	}
-	rsp.StatusCode = int32(statusCode)
+	rsp.StatusCode = 200
 	rsp.Body = string(b)
 
 	return nil

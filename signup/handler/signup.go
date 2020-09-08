@@ -9,10 +9,16 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	cproto "github.com/m3o/services/customers/proto"
+	inviteproto "github.com/m3o/services/invite/proto"
+	nproto "github.com/m3o/services/namespaces/proto"
+	signup "github.com/m3o/services/signup/proto/signup"
+	sproto "github.com/m3o/services/subscriptions/proto"
+	"github.com/patrickmn/go-cache"
+
 	"github.com/micro/go-micro/v3/auth"
 	"github.com/micro/go-micro/v3/client"
 	merrors "github.com/micro/go-micro/v3/errors"
@@ -20,47 +26,51 @@ import (
 	"github.com/micro/go-micro/v3/store"
 	mconfig "github.com/micro/micro/v3/service/config"
 	mstore "github.com/micro/micro/v3/service/store"
-	"github.com/sethvargo/go-diceware/diceware"
-
-	signup "github.com/m3o/services/signup/proto/signup"
-
-	inviteproto "github.com/m3o/services/account/invite/proto"
-	k8sproto "github.com/m3o/services/kubernetes/service/proto"
-	paymentsproto "github.com/m3o/services/payments/provider/proto"
 )
 
 const (
-	storePrefixAccountSecrets = "secrets/"
-	storePrefixNamesapce      = "namespaces/"
-	expiryDuration            = 5 * time.Minute
+	expiryDuration = 5 * time.Minute
 )
 
 type tokenToEmail struct {
-	Email string `json:"email"`
-	Token string `json:"token"`
+	Email   string `json:"email"`
+	Token   string `json:"token"`
+	Created int64  `json:"created"`
 }
 
 type Signup struct {
-	paymentService     paymentsproto.ProviderService
-	inviteService      inviteproto.InviteService
-	k8sService         k8sproto.KubernetesService
-	auth               auth.Auth
-	sendgridTemplateID string
-	sendgridAPIKey     string
-	planID             string
-	emailFrom          string
-	testMode           bool
+	inviteService       inviteproto.InviteService
+	customerService     cproto.CustomersService
+	namespaceService    nproto.NamespacesService
+	subscriptionService sproto.SubscriptionsService
+	auth                auth.Auth
+	sendgridTemplateID  string
+	recoverTemplateID   string
+	sendgridAPIKey      string
+	emailFrom           string
+	paymentMessage      string
+	testMode            bool
+	cache               *cache.Cache
 }
 
-func NewSignup(paymentService paymentsproto.ProviderService,
-	inviteService inviteproto.InviteService,
-	k8sService k8sproto.KubernetesService, auth auth.Auth) *Signup {
+var (
+	// TODO: move this message to a better location
+	// Message is a predefined message returned during signup
+	Message = "Please complete signup at https://m3o.com/subscribe?email=%s and enter the generated token ID: "
+)
+
+func NewSignup(inviteService inviteproto.InviteService,
+	customerService cproto.CustomersService,
+	namespaceService nproto.NamespacesService,
+	subscriptionService sproto.SubscriptionsService,
+	auth auth.Auth) *Signup {
 
 	apiKey := mconfig.Get("micro", "signup", "sendgrid", "api_key").String("")
 	templateID := mconfig.Get("micro", "signup", "sendgrid", "template_id").String("")
-	planID := mconfig.Get("micro", "signup", "plan_id").String("")
+	recoverTemplateID := mconfig.Get("micro", "signup", "sendgrid", "recovery_template_id").String("")
 	emailFrom := mconfig.Get("micro", "signup", "email_from").String("Micro Team <support@micro.mu>")
 	testMode := mconfig.Get("micro", "signup", "test_env").Bool(false)
+	paymentMessage := mconfig.Get("micro", "signup", "message").String(Message)
 
 	if len(apiKey) == 0 {
 		logger.Error("No sendgrid API key provided")
@@ -68,19 +78,19 @@ func NewSignup(paymentService paymentsproto.ProviderService,
 	if len(templateID) == 0 {
 		logger.Error("No sendgrid template ID provided")
 	}
-	if len(planID) == 0 {
-		logger.Error("No stripe plan id")
-	}
 	return &Signup{
-		paymentService:     paymentService,
-		inviteService:      inviteService,
-		k8sService:         k8sService,
-		auth:               auth,
-		sendgridAPIKey:     apiKey,
-		sendgridTemplateID: templateID,
-		planID:             planID,
-		emailFrom:          emailFrom,
-		testMode:           testMode,
+		inviteService:       inviteService,
+		customerService:     customerService,
+		namespaceService:    namespaceService,
+		subscriptionService: subscriptionService,
+		auth:                auth,
+		sendgridAPIKey:      apiKey,
+		sendgridTemplateID:  templateID,
+		emailFrom:           emailFrom,
+		testMode:            testMode,
+		paymentMessage:      paymentMessage,
+		recoverTemplateID:   recoverTemplateID,
+		cache:               cache.New(1*time.Minute, 5*time.Minute),
 	}
 }
 
@@ -119,14 +129,16 @@ func (e *Signup) SendVerificationEmail(ctx context.Context,
 	rsp *signup.SendVerificationEmailResponse) error {
 	logger.Info("Received Signup.SendVerificationEmail request")
 
-	if !e.isAllowedToSignup(ctx, req.Email) {
-		return merrors.Forbidden("go.micro.service.signup.notallowed", "user has not been invited to sign up")
+	_, isAllowed := e.isAllowedToSignup(ctx, req.Email)
+	if !isAllowed {
+		return merrors.Forbidden("signup.notallowed", "user has not been invited to sign up")
 	}
 
 	k := randStringBytesMaskImprSrc(8)
 	tok := &tokenToEmail{
-		Token: k,
-		Email: req.Email,
+		Token:   k,
+		Email:   req.Email,
+		Created: time.Now().Unix(),
 	}
 
 	bytes, err := json.Marshal(tok)
@@ -136,10 +148,16 @@ func (e *Signup) SendVerificationEmail(ctx context.Context,
 
 	if err := mstore.Write(&store.Record{
 		Key:   req.Email,
-		Value: bytes}, store.WriteExpiry(time.Now().Add(expiryDuration))); err != nil {
+		Value: bytes,
+	}); err != nil {
 		return err
 	}
 
+	if _, err := e.customerService.Create(ctx, &cproto.CreateRequest{
+		Id: req.Email,
+	}, client.WithAuthToken()); err != nil {
+		return err
+	}
 	if e.testMode {
 		logger.Infof("Sending verification token '%v'", k)
 	}
@@ -147,7 +165,10 @@ func (e *Signup) SendVerificationEmail(ctx context.Context,
 	// Send email
 	// @todo send different emails based on if the account already exists
 	// ie. registration vs login email.
-	err = e.sendEmail(req.Email, k)
+
+	err = e.sendEmail(req.Email, e.sendgridTemplateID, map[string]interface{}{
+		"token": k,
+	})
 	if err != nil {
 		return err
 	}
@@ -155,21 +176,26 @@ func (e *Signup) SendVerificationEmail(ctx context.Context,
 	return nil
 }
 
-func (e *Signup) isAllowedToSignup(ctx context.Context, email string) bool {
+func (e *Signup) isAllowedToSignup(ctx context.Context, email string) ([]string, bool) {
 	// for now we're checking the invite service before allowing signup
 	// TODO check for a valid invite code rather than just the email
-	_, err := e.inviteService.Validate(ctx, &inviteproto.ValidateRequest{Email: email})
-	return err == nil
+	rsp, err := e.inviteService.Validate(ctx, &inviteproto.ValidateRequest{Email: email}, client.WithAuthToken())
+	if err != nil {
+		return nil, false
+	}
+	return rsp.Namespaces, true
 }
 
 // Lifted  from the invite service https://github.com/m3o/services/blob/master/projects/invite/handler/invite.go#L187
 // sendEmailInvite sends an email invite via the sendgrid API using the
 // predesigned email template. Docs: https://bit.ly/2VYPQD1
-func (e *Signup) sendEmail(email, token string) error {
-	logger.Infof("Sending email to address '%v'", email)
-
+func (e *Signup) sendEmail(email, templateID string, templateData map[string]interface{}) error {
+	if e.testMode {
+		logger.Infof("Test mode enabled, not sending email to address '%v' ", email)
+		return nil
+	}
 	reqBody, _ := json.Marshal(map[string]interface{}{
-		"template_id": e.sendgridTemplateID,
+		"template_id": templateID,
 		"from": map[string]string{
 			"email": e.emailFrom,
 		},
@@ -180,9 +206,12 @@ func (e *Signup) sendEmail(email, token string) error {
 						"email": email,
 					},
 				},
-				"dynamic_template_data": map[string]string{
-					"token": token,
-				},
+				"dynamic_template_data": templateData,
+			},
+		},
+		"mail_settings": map[string]interface{}{
+			"sandbox_mode": map[string]bool{
+				"enable": e.testMode,
 			},
 		},
 	})
@@ -196,7 +225,7 @@ func (e *Signup) sendEmail(email, token string) error {
 	req.Header.Set("Content-Type", "application/json")
 	rsp, err := new(http.Client).Do(req)
 	if err != nil {
-		logger.Infof("Could not send email to %v, error: %v", email, err)
+		logger.Infof("Could not send email, error: %v", err)
 		return err
 	}
 	defer rsp.Body.Close()
@@ -204,18 +233,16 @@ func (e *Signup) sendEmail(email, token string) error {
 	if rsp.StatusCode < 200 || rsp.StatusCode > 299 {
 		bytes, err := ioutil.ReadAll(rsp.Body)
 		if err != nil {
-			logger.Errorf("Could not send email to %v, error: %v", email, err.Error())
+			logger.Errorf("Could not send email, error: %v", err.Error())
 			return err
 		}
-		logger.Errorf("Could not send email to %v, error: %v", email, string(bytes))
-		return merrors.InternalServerError("go.micro.service.signup.sendemail", "error sending email")
+		logger.Errorf("Could not send email, error: %v", string(bytes))
+		return merrors.InternalServerError("signup.sendemail", "error sending email")
 	}
 	return nil
 }
 
-func (e *Signup) Verify(ctx context.Context,
-	req *signup.VerifyRequest,
-	rsp *signup.VerifyResponse) error {
+func (e *Signup) Verify(ctx context.Context, req *signup.VerifyRequest, rsp *signup.VerifyResponse) error {
 	logger.Info("Received Signup.Verify request")
 
 	recs, err := mstore.Read(req.Email)
@@ -230,64 +257,43 @@ func (e *Signup) Verify(ctx context.Context,
 		return err
 	}
 
-	if tok.Token != req.Token {
+	if tok.Token != req.Token || time.Since(time.Unix(tok.Created, 0)) > expiryDuration {
 		return errors.New("Invalid token")
 	}
 
-	secret, err := e.getAccountSecret(req.Email)
-	if err != store.ErrNotFound && err != nil {
-		return fmt.Errorf("can't get account secret: %v", err)
+	// set the response message
+	rsp.Message = fmt.Sprintf(e.paymentMessage, req.Email)
+	// we require payment for any signup
+	// if not set the CLI will try complete signup without payment id
+	rsp.PaymentRequired = true
+
+	if _, err := e.customerService.MarkVerified(ctx, &cproto.MarkVerifiedRequest{
+		Id: req.Email,
+	}, client.WithAuthToken()); err != nil {
+		return err
 	}
 
-	// If the user has a secret it means the account is ready
-	// to be used, so we log them in.
-	if len(secret) > 0 {
-		ns, err := e.getNamespace(req.Email)
-		if err != nil && err != store.ErrNotFound {
-			return err
-		}
-
-		token, err := e.auth.Token(auth.WithCredentials(req.Email, secret), auth.WithTokenIssuer(ns))
-		if err != nil {
-			return err
-		}
-		rsp.AuthToken = &signup.AuthToken{
-			AccessToken:  token.AccessToken,
-			RefreshToken: token.RefreshToken,
-			Expiry:       token.Expiry.Unix(),
-			Created:      token.Created.Unix(),
-		}
-		// @todo what to do if namespace is not found?
-		rsp.Namespace = ns
-		return nil
+	// At this point the user should be allowed, only making this call to return namespaces
+	namespaces, isAllowed := e.isAllowedToSignup(ctx, req.Email)
+	if !isAllowed {
+		return merrors.Forbidden("signup.notallowed", "user has not been invited to sign up")
 	}
-
-	// Otherwisewe just return without an error but with no token
-	_, err = e.paymentService.CreateCustomer(ctx, &paymentsproto.CreateCustomerRequest{
-		Customer: &paymentsproto.Customer{
-			Id:   req.Email,
-			Type: "user",
-		},
-	})
-	return err
-}
-
-func (e *Signup) getNamespace(email string) (string, error) {
-	key := storePrefixNamesapce + email
-	recs, err := mstore.Read(key)
-	if err != nil {
-		return "", err
-	}
-	return string(recs[0].Value), nil
-}
-
-func (e *Signup) saveNamespace(email, namespace string) error {
-	key := storePrefixNamesapce + email
-	return mstore.Write(&store.Record{Key: key, Value: []byte(namespace)})
+	rsp.Namespaces = namespaces
+	return nil
 }
 
 func (e *Signup) CompleteSignup(ctx context.Context, req *signup.CompleteSignupRequest, rsp *signup.CompleteSignupResponse) error {
 	logger.Info("Received Signup.CompleteSignup request")
+
+	namespaces, isAllowed := e.isAllowedToSignup(ctx, req.Email)
+	if !isAllowed {
+		return merrors.Forbidden("signup.notallowed", "user has not been invited to sign up")
+	}
+	ns := ""
+	isJoining := len(namespaces) > 0 && len(req.Namespace) > 0 && namespaces[0] == req.Namespace
+	if isJoining {
+		ns = namespaces[0]
+	}
 
 	recs, err := mstore.Read(req.Email)
 	if err == store.ErrNotFound {
@@ -300,36 +306,23 @@ func (e *Signup) CompleteSignup(ctx context.Context, req *signup.CompleteSignupR
 	if err := json.Unmarshal(recs[0].Value, tok); err != nil {
 		return err
 	}
-	if tok.Token != req.Token {
+	if tok.Token != req.Token { // not checking expiry here because we've already checked it during Verify() step
 		return errors.New("invalid token")
 	}
 
-	_, err = e.paymentService.CreatePaymentMethod(ctx, &paymentsproto.CreatePaymentMethodRequest{
-		CustomerId:   req.Email,
-		CustomerType: "user",
-		Id:           req.PaymentMethodID,
-	})
-	if err != nil {
-		return err
+	if isJoining {
+		if err := e.joinNamespace(ctx, req.Email, ns); err != nil {
+			return err
+		}
+	} else {
+		newNs, err := e.signupWithNewNamespace(ctx, req)
+		if err != nil {
+			return err
+		}
+		ns = newNs
 	}
 
-	_, err = e.paymentService.SetDefaultPaymentMethod(ctx, &paymentsproto.SetDefaultPaymentMethodRequest{
-		CustomerId:      req.Email,
-		CustomerType:    "user",
-		PaymentMethodId: req.PaymentMethodID,
-	})
-	if err != nil {
-		return err
-	}
-
-	_, err = e.paymentService.CreateSubscription(ctx, &paymentsproto.CreateSubscriptionRequest{
-		CustomerId:   req.Email,
-		CustomerType: "user",
-		PlanId:       e.planID,
-	}, client.WithRequestTimeout(10*time.Second))
-	if err != nil {
-		return err
-	}
+	rsp.Namespace = ns
 
 	// take secret from the request
 	secret := req.Secret
@@ -338,21 +331,6 @@ func (e *Signup) CompleteSignup(ctx context.Context, req *signup.CompleteSignupR
 	if len(req.Secret) == 0 {
 		secret = uuid.New().String()
 	}
-
-	err = e.setAccountSecret(req.Email, secret)
-	if err != nil {
-		return err
-	}
-	ns, err := e.createNamespace(ctx)
-	if err != nil {
-		return err
-	}
-	err = e.saveNamespace(req.Email, ns)
-	if err != nil {
-		return err
-	}
-	rsp.Namespace = ns
-
 	_, err = e.auth.Generate(req.Email, auth.WithSecret(secret), auth.WithIssuer(ns))
 	if err != nil {
 		return err
@@ -371,31 +349,72 @@ func (e *Signup) CompleteSignup(ctx context.Context, req *signup.CompleteSignupR
 	return nil
 }
 
-// lifted from https://github.com/m3o/services/blob/550220a6eff2604b3e6d58d09db2b4489967019c/account/web/handler/handler.go#L114
-func (e *Signup) setAccountSecret(id, secret string) error {
-	key := storePrefixAccountSecrets + id
-	return mstore.Write(&store.Record{Key: key, Value: []byte(secret)})
+func (e *Signup) Recover(ctx context.Context, req *signup.RecoverRequest, rsp *signup.RecoverResponse) error {
+	logger.Info("Received Signup.Recover request")
+	_, found := e.cache.Get(req.Email)
+	if found {
+		return merrors.BadRequest("signup.recover", "We have issued a recovery email recently. Please check that.")
+	}
+
+	listRsp, err := e.namespaceService.List(ctx, &nproto.ListRequest{
+		User: req.Email,
+	}, client.WithAuthToken())
+	if err != nil {
+		return merrors.InternalServerError("signup.recover", "Error calling namespace service: %v", err)
+	}
+	if len(listRsp.Namespaces) == 0 {
+		return merrors.BadRequest("signup.recover", "We don't recognize this account")
+	}
+
+	// Sendgrid wants objects in a list not string
+	namespaces := []map[string]string{}
+	for _, v := range listRsp.Namespaces {
+		namespaces = append(namespaces, map[string]string{
+			"id": v.Id,
+		})
+	}
+
+	logger.Infof("Sending email with data %v", namespaces)
+	err = e.sendEmail(req.Email, e.recoverTemplateID, map[string]interface{}{
+		"namespaces": namespaces,
+	})
+	if err == nil {
+		e.cache.Set(req.Email, true, cache.DefaultExpiration)
+	}
+	return err
 }
 
-func (e *Signup) getAccountSecret(id string) (string, error) {
-	key := storePrefixAccountSecrets + id
-	recs, err := mstore.Read(key)
+func (e *Signup) signupWithNewNamespace(ctx context.Context, req *signup.CompleteSignupRequest) (string, error) {
+	// TODO fix type to be more than just developer
+	_, err := e.subscriptionService.Create(ctx, &sproto.CreateRequest{CustomerID: req.Email, Type: "developer", PaymentMethodID: req.PaymentMethodID}, client.WithAuthToken())
 	if err != nil {
 		return "", err
 	}
-	return string(recs[0].Value), nil
-}
-
-func (e *Signup) createNamespace(ctx context.Context) (string, error) {
-	list, err := diceware.Generate(3)
+	nsRsp, err := e.namespaceService.Create(ctx, &nproto.CreateRequest{Owners: []string{req.Email}}, client.WithAuthToken())
 	if err != nil {
 		return "", err
 	}
-	ns := strings.Join(list, "-")
-	if !e.testMode {
-		_, err = e.k8sService.CreateNamespace(ctx, &k8sproto.CreateNamespaceRequest{
-			Name: ns,
-		}, client.WithRequestTimeout(10*time.Second))
+	return nsRsp.Namespace.Id, nil
+}
+
+func (e *Signup) joinNamespace(ctx context.Context, email, ns string) error {
+	rsp, err := e.namespaceService.Read(ctx, &nproto.ReadRequest{
+		Id: ns,
+	}, client.WithAuthToken())
+	if err != nil {
+		return err
 	}
-	return ns, err
+	ownerEmail := rsp.Namespace.Owners[0]
+
+	_, err = e.subscriptionService.AddUser(ctx, &sproto.AddUserRequest{OwnerID: ownerEmail, NewUserID: email}, client.WithAuthToken())
+	if err != nil {
+		return merrors.InternalServerError("signup.join.subscription", "Error adding user to subscription %s", err)
+	}
+
+	_, err = e.namespaceService.AddUser(ctx, &nproto.AddUserRequest{Namespace: ns, User: email}, client.WithAuthToken())
+	if err != nil {
+		return merrors.InternalServerError("signup.join.namespace", "Error adding user to namespace %s", err)
+	}
+
+	return nil
 }
