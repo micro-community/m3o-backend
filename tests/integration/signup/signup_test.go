@@ -7,7 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math/rand"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -51,13 +54,13 @@ func TestSignupFlow(t *testing.T) {
 func setupM3Tests(serv test.Server, t *test.T) {
 	envToConfigKey := map[string][]string{
 		"MICRO_STRIPE_API_KEY":                      {"micro.payments.stripe.api_key"},
-		"MICRO_SENDGRID_API_KEY":                    {"micro.signup.sendgrid.api_key", "micro.invite.sendgrid.api_key"},
+		"MICRO_SENDGRID_API_KEY":                    {"micro.emails.sendgrid.api_key"},
 		"MICRO_SENDGRID_TEMPLATE_ID":                {"micro.signup.sendgrid.template_id"},
 		"MICRO_SENDGRID_INVITE_TEMPLATE_ID":         {"micro.invite.sendgrid.invite_template_id"},
 		"MICRO_STRIPE_PLAN_ID":                      {"micro.subscriptions.plan_id"},
 		"MICRO_STRIPE_ADDITIONAL_USERS_PRICE_ID":    {"micro.subscriptions.additional_users_price_id"},
 		"MICRO_EMAIL_FROM":                          {"micro.signup.email_from"},
-		"MICRO_TEST_ENV":                            {"micro.signup.test_env", "micro.invite.test_env"},
+		"MICRO_TEST_ENV":                            {"micro.signup.test_env"},
 		"MICRO_STRIPE_ADDITIONAL_SERVICES_PRICE_ID": {"micro.subscriptions.additional_services_price_id"},
 	}
 
@@ -86,6 +89,7 @@ func setupM3Tests(serv test.Server, t *test.T) {
 		{envVar: "M3O_NAMESPACES_SVC", deflt: "../../../namespaces"},
 		{envVar: "M3O_SUBSCRIPTIONS_SVC", deflt: "../../../subscriptions"},
 		{envVar: "M3O_PLATFORM_SVC", deflt: "../../../platform"},
+		{envVar: "M3O_EMAILS_SVC", deflt: "../../../emails"},
 	}
 
 	for _, v := range services {
@@ -104,8 +108,9 @@ func setupM3Tests(serv test.Server, t *test.T) {
 		if !strings.Contains(string(outp), "stripe") ||
 			!strings.Contains(string(outp), "signup") ||
 			!strings.Contains(string(outp), "invite") ||
+			!strings.Contains(string(outp), "emails") ||
 			!strings.Contains(string(outp), "customers") {
-			return outp, errors.New("Can't find signup or stripe or invite in list")
+			return outp, errors.New("Can't find required services in list")
 		}
 		return outp, err
 	}, 180*time.Second); err != nil {
@@ -813,7 +818,7 @@ func signup(serv test.Server, t *test.T, email, password string, opts signupOpti
 		}
 	}()
 	go func() {
-		time.Sleep(40 * time.Second)
+		time.Sleep(60 * time.Second)
 		cmd.Process.Kill()
 	}()
 
@@ -834,9 +839,6 @@ func signup(serv test.Server, t *test.T, email, password string, opts signupOpti
 		outp, err := exec.Command("micro", envFlag, adminConfFlag, "logs", "-n", "300", "signup").CombinedOutput()
 		if err != nil {
 			return outp, err
-		}
-		if !strings.Contains(string(outp), email) {
-			return outp, errors.New("Output does not contain email")
 		}
 		if !strings.Contains(string(outp), "Sending verification token") {
 			return outp, errors.New("Output does not contain expected")
@@ -900,67 +902,85 @@ func signup(serv test.Server, t *test.T, email, password string, opts signupOpti
 			return
 		}
 
-		_, err = io.WriteString(stdin, pm.ID+"\n")
+		// using a curl here as `call` redirection to micro namespace doesnt work properly, unlike
+		// dynamic commands
+
+		curl := func(serv test.Server, path, email, paymentMethod string) (map[string]interface{}, error) {
+			resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%v/%v?email=%v&paymentMethod=%v", serv.APIPort(), path, url.QueryEscape(email), paymentMethod))
+			if err != nil {
+				return nil, err
+			}
+			defer resp.Body.Close()
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			m := map[string]interface{}{}
+			return m, json.Unmarshal(body, &m)
+		}
+
+		rsp, err := curl(serv, "signup/setPaymentMethod", email, pm.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
+		if len(rsp) > 0 {
+			t.Fatal(rsp)
+		}
 	}
 
-	// Instead of a sleep shoud probably use Try
 	// Some gotchas for this: while the stripe api documentation online
 	// shows prices and plans being separate entitires, even v71 version of the
 	// go library only has plans. However, it seems like the prices are under plans too.
-	time.Sleep(5 * time.Second)
+	test.Try("Check subscription in stripe", t, func() ([]byte, error) {
+		sc := stripe_client.New(os.Getenv("MICRO_STRIPE_API_KEY"), nil)
+		subListParams := &stripe.SubscriptionListParams{}
+		subListParams.Limit = stripe.Int64(20)
+		subListParams.AddExpand("data.customer")
+		iter := sc.Subscriptions.List(subListParams)
+		count := 0
+		// email -> plan/price id -> subscription
+		userPlans := map[string]*stripe.Subscription{}
+		inviterPlans := map[string]*stripe.Subscription{}
+		for iter.Next() {
+			if count > 20 {
+				break
+			}
+			count++
 
-	// Testing if stripe subscriptions exist
-
-	sc := stripe_client.New(os.Getenv("MICRO_STRIPE_API_KEY"), nil)
-	subListParams := &stripe.SubscriptionListParams{}
-	subListParams.Limit = stripe.Int64(20)
-	subListParams.AddExpand("data.customer")
-	iter := sc.Subscriptions.List(subListParams)
-	count := 0
-	// email -> plan/price id -> subscription
-	userPlans := map[string]*stripe.Subscription{}
-	inviterPlans := map[string]*stripe.Subscription{}
-	for iter.Next() {
-		if count > 20 {
-			break
-		}
-		count++
-
-		c := iter.Subscription()
-		if len(opts.inviterEmail) > 0 && c.Customer.Email == opts.inviterEmail {
-			if c.Plan != nil {
-				inviterPlans[c.Plan.ID] = c
+			c := iter.Subscription()
+			if len(opts.inviterEmail) > 0 && c.Customer.Email == opts.inviterEmail {
+				if c.Plan != nil {
+					inviterPlans[c.Plan.ID] = c
+				}
+			}
+			if c.Customer.Email == email {
+				if c.Plan != nil {
+					userPlans[c.Plan.ID] = c
+				}
 			}
 		}
-		if c.Customer.Email == email {
-			if c.Plan != nil {
-				userPlans[c.Plan.ID] = c
+
+		if opts.shouldJoin {
+			priceID := os.Getenv("MICRO_STRIPE_ADDITIONAL_USERS_PRICE_ID")
+			sub, found := inviterPlans[priceID]
+			if !found {
+				return nil, fmt.Errorf("Subscription with price ID %v not found", priceID)
+			}
+			if sub.Quantity != int64(opts.xthInvitee) {
+				return nil, fmt.Errorf("Subscription quantity '%v' should match invitee number '%v", sub.Quantity, opts.xthInvitee)
+			}
+		} else {
+			planID := os.Getenv("MICRO_STRIPE_PLAN_ID")
+			sub, found := userPlans[planID]
+			if !found {
+				return nil, fmt.Errorf("Subscription with plan ID %v not found", planID)
+			}
+			if sub.Quantity != 1 {
+				return nil, fmt.Errorf("Subscription quantity should be 1 but is %v", sub.Quantity)
 			}
 		}
-	}
-
-	if opts.shouldJoin {
-		priceID := os.Getenv("MICRO_STRIPE_ADDITIONAL_USERS_PRICE_ID")
-		sub, found := inviterPlans[priceID]
-		if !found {
-			t.Fatalf("Subscription with price ID %v not found", priceID)
-		}
-		if sub.Quantity != int64(opts.xthInvitee) {
-			t.Fatalf("Subscription quantity '%v' should match invitee number '%v", sub.Quantity, opts.xthInvitee)
-		}
-	} else {
-		planID := os.Getenv("MICRO_STRIPE_PLAN_ID")
-		sub, found := userPlans[planID]
-		if !found {
-			t.Fatalf("Subscription with plan ID %v not found", planID)
-		}
-		if sub.Quantity != 1 {
-			t.Fatalf("Subscription quantity should be 1 but is %v", sub.Quantity)
-		}
-	}
+		return nil, nil
+	}, 50*time.Second)
 
 	test.Try("Check customer marked active", t, func() ([]byte, error) {
 		outp, err := exec.Command("micro", envFlag, adminConfFlag, "customers", "read", "--email="+email).CombinedOutput()

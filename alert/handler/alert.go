@@ -48,6 +48,7 @@ func NewAlert(store store.Store) *Alert {
 	if len(gaPropertyID) == 0 {
 		log.Errorf("Google Analytics key (property ID) is missing")
 	}
+	log.Infof("Slack enabled: %v", slackEnabled)
 
 	return &Alert{
 		slackClient:  slack.New(slackToken),
@@ -79,12 +80,12 @@ func (e *Alert) ReportEvent(ctx context.Context, req *alert.ReportEventRequest, 
 	if err != nil {
 		log.Warnf("Error sending event to google analytics: %v", err)
 	}
-	if req.Event.Action == "error" && e.slackEnabled {
+	if e.slackEnabled {
 		jsond, err := json.MarshalIndent(req.Event, "", "   ")
 		if err != nil {
 			return err
 		}
-		msg := fmt.Sprintf("Error event received:\n```\n%v\n```", string(jsond))
+		msg := fmt.Sprintf("Event received:\n```\n%v\n```", string(jsond))
 		_, _, _, err = e.slackClient.SendMessage("errors", slack.MsgOptionUsername("Alert Service"), slack.MsgOptionText(msg, false))
 		if err != nil {
 			return err
