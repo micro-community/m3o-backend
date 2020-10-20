@@ -8,18 +8,21 @@ import (
 
 	"github.com/google/uuid"
 
-	log "github.com/micro/go-micro/v3/logger"
-
-	"github.com/micro/micro/v3/service/auth"
-
 	customer "github.com/m3o/services/customers/proto"
-	"github.com/micro/go-micro/v3/errors"
-	"github.com/micro/go-micro/v3/store"
+	nsproto "github.com/m3o/services/namespaces/proto"
+	aproto "github.com/micro/micro/v3/proto/auth"
+	"github.com/micro/micro/v3/service"
+	"github.com/micro/micro/v3/service/auth"
+	"github.com/micro/micro/v3/service/client"
+	"github.com/micro/micro/v3/service/errors"
 	mevents "github.com/micro/micro/v3/service/events"
+	log "github.com/micro/micro/v3/service/logger"
 	mstore "github.com/micro/micro/v3/service/store"
 )
 
 type Customers struct {
+	accountsService   aproto.AccountsService
+	namespacesService nsproto.NamespacesService
 }
 
 const (
@@ -38,10 +41,16 @@ type CustomerModel struct {
 	Email   string
 	Status  string
 	Created int64
+	Updated int64
 }
 
-func New() *Customers {
-	return &Customers{}
+func New(service *service.Service) *Customers {
+	c := &Customers{
+		accountsService:   aproto.NewAccountsService("auth", service.Client()),
+		namespacesService: nsproto.NewNamespacesService("namespaces", service.Client()),
+	}
+	go c.consumeEvents()
+	return c
 }
 
 func objToProto(cust *CustomerModel) *customer.Customer {
@@ -50,6 +59,7 @@ func objToProto(cust *CustomerModel) *customer.Customer {
 		Status:  cust.Status,
 		Created: cust.Created,
 		Email:   cust.Email,
+		Updated: cust.Updated,
 	}
 }
 
@@ -66,10 +76,9 @@ func (c *Customers) Create(ctx context.Context, request *customer.CreateRequest,
 		return errors.BadRequest("customers.create", "Email is required")
 	}
 	cust := &CustomerModel{
-		ID:      uuid.New().String(),
-		Status:  statusUnverified,
-		Created: time.Now().Unix(),
-		Email:   email,
+		ID:     uuid.New().String(),
+		Status: statusUnverified,
+		Email:  email,
 	}
 	if err := writeCustomer(cust); err != nil {
 		return err
@@ -95,13 +104,9 @@ func (c *Customers) MarkVerified(ctx context.Context, request *customer.MarkVeri
 	if strings.TrimSpace(email) == "" {
 		return errors.BadRequest("customers.markverified", "Email is required")
 	}
-	cust, err := updateCustomerStatusByEmail(email, statusVerified)
+	_, err := updateCustomerStatusByEmail(email, statusVerified)
 	if err != nil {
 		return err
-	}
-	ev := CustomerEvent{Customer: *cust, Type: "customers.verified"}
-	if err := mevents.Publish(custTopic, ev); err != nil {
-		log.Errorf("Error publishing customers.verified event %+v", ev)
 	}
 	return nil
 }
@@ -126,6 +131,9 @@ func readCustomer(id, prefix string) (*CustomerModel, error) {
 	cust := &CustomerModel{}
 	if err := json.Unmarshal(rec.Value, cust); err != nil {
 		return nil, err
+	}
+	if cust.Status == statusDeleted {
+		return nil, errors.NotFound("customers.read.notfound", "Customer not found")
 	}
 	return cust, nil
 }
@@ -159,13 +167,9 @@ func (c *Customers) Delete(ctx context.Context, request *customer.DeleteRequest,
 	if strings.TrimSpace(request.Id) == "" {
 		return errors.BadRequest("customers.delete", "ID is required")
 	}
-	cust, err := updateCustomerStatusByID(request.Id, statusDeleted)
-	if err != nil {
-		return err
-	}
-	ev := CustomerEvent{Customer: *cust, Type: "customers.deleted"}
-	if err := mevents.Publish(custTopic, ev); err != nil {
-		log.Errorf("Error publishing customers.deleted event %+v", ev)
+	if err := c.deleteCustomer(ctx, request.Id); err != nil {
+		log.Errorf("Error deleting customer %s %s", request.Id, err)
+		return errors.InternalServerError("customers.delete", "Error deleting customer")
 	}
 	return nil
 }
@@ -187,21 +191,30 @@ func updateCustomerStatus(id, status, prefix string) (*CustomerModel, error) {
 	if err := writeCustomer(cust); err != nil {
 		return nil, err
 	}
+	ev := CustomerEvent{Customer: *cust, Type: "customers." + status}
+	if err := mevents.Publish(custTopic, ev); err != nil {
+		log.Errorf("Error publishing customers.%s event %+v", status, ev)
+	}
+
 	return cust, nil
 
 }
 
 func writeCustomer(cust *CustomerModel) error {
+	now := time.Now().Unix()
+	if cust.Created == 0 {
+		cust.Created = now
+	}
+	cust.Updated = now
 	b, _ := json.Marshal(*cust)
-
-	if err := mstore.Write(&store.Record{
+	if err := mstore.Write(&mstore.Record{
 		Key:   prefixCustomer + cust.ID,
 		Value: b,
 	}); err != nil {
 		return err
 	}
 
-	if err := mstore.Write(&store.Record{
+	if err := mstore.Write(&mstore.Record{
 		Key:   prefixCustomerEmail + cust.Email,
 		Value: b,
 	}); err != nil {
@@ -217,6 +230,64 @@ func authorizeCall(ctx context.Context) error {
 	}
 	if account.Issuer != "micro" {
 		return errors.Unauthorized("customers", "Unauthorized request")
+	}
+	return nil
+}
+
+func (c *Customers) deleteCustomer(ctx context.Context, customerID string) error {
+	// auth accounts are tied to namespaces so get that list and delete all
+	rsp, err := c.namespacesService.List(ctx, &nsproto.ListRequest{User: customerID}, client.WithAuthToken())
+	if err != nil {
+		return err
+	}
+
+	owned := []string{}
+	for _, ns := range rsp.Namespaces {
+		_, err := c.accountsService.Delete(ctx, &aproto.DeleteAccountRequest{
+			Id:      customerID,
+			Options: &aproto.Options{Namespace: ns.Id},
+		}, client.WithAuthToken())
+		if ignoreDeleteError(err) != nil {
+			return err
+		}
+		// are we the owner
+		if len(ns.Owners) == 1 && ns.Owners[0] == customerID {
+			owned = append(owned, ns.Id)
+		}
+	}
+
+	// delete any owned namespaces
+	for _, ns := range owned {
+		_, err := c.namespacesService.Delete(ctx, &nsproto.DeleteRequest{Id: ns}, client.WithAuthToken())
+		if ignoreDeleteError(err) != nil {
+			return err
+		}
+	}
+
+	// delete customer
+	cust, err := updateCustomerStatusByID(customerID, statusDeleted)
+	if err != nil {
+		return err
+	}
+	// fire deleted event
+	ev := CustomerEvent{Customer: *cust, Type: "customers.deleted"}
+	if err := mevents.Publish(custTopic, ev); err != nil {
+		log.Errorf("Error publishing customers.deleted event %+v", ev)
+	}
+	return nil
+}
+
+// ignoreDeleteError will ignore any 400 or 404 errors returned, useful for idempotent deletes
+func ignoreDeleteError(err error) error {
+	if err != nil {
+		merr, ok := err.(*errors.Error)
+		if !ok {
+			return err
+		}
+		if merr.Code == 400 || merr.Code == 404 {
+			return nil
+		}
+		return err
 	}
 	return nil
 }

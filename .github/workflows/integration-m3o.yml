@@ -1,5 +1,5 @@
 name: M3O integration tests
-on: [pull_request]
+on: [push]
 
 jobs:
 
@@ -7,7 +7,6 @@ jobs:
     name: Micro server m3o integration tests
     runs-on: ubuntu-latest
     steps:
-
     - name: Set up Go 1.13
       uses: actions/setup-go@v2
       with:
@@ -28,10 +27,19 @@ jobs:
         repository: 'micro/micro'
         path: 'micro'
 
+    - name: Enable caching
+      uses: actions/cache@v2
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
     - name: Install micro
       working-directory: micro
       run: |
         go run . init --profile=ci --output=profile.go
+        go mod edit -replace github.com/micro/micro/plugin/etcd/v3=./plugin/etcd
         go mod edit -replace github.com/micro/micro/profile/ci/v3=./profile/ci
         go mod edit -replace google.golang.org/grpc=google.golang.org/grpc@v1.26.0
         go install
@@ -46,7 +54,7 @@ jobs:
           # Generate keys for JWT tests
           ssh-keygen -f /tmp/sshkey -m pkcs8 -q -N ""
           ssh-keygen -f /tmp/sshkey -e  -m pkcs8 > /tmp/sshkey.pub
-          go clean -testcache && go test -timeout 15m --tags=m3o -v ./...
+          go clean -testcache && GOMAXPROCS=4 go test -timeout 15m --tags=m3o -v ./...
       env:
         MICRO_STRIPE_API_KEY: ${{ secrets.MICRO_STRIPE_API_KEY }}
         MICRO_SENDGRID_API_KEY: ${{ secrets.MICRO_SENDGRID_API_KEY }}
@@ -57,7 +65,8 @@ jobs:
         MICRO_STRIPE_ADDITIONAL_SERVICES_PRICE_ID: ${{ secrets.MICRO_STRIPE_ADDITIONAL_SERVICES_PRICE_ID }}
         MICRO_EMAIL_FROM: ${{ secrets.MICRO_EMAIL_FROM }}
         MICRO_TEST_ENV: ${{ secrets.MICRO_TEST_ENV }}
-        M3O_STRIPE_SVC: ../../../payments/provider/stripe
+        M3O_STRIPE_SVC: ../../../payments
         M3O_SIGNUP_SVC: ../../../signup
         M3O_INVITE_SVC: ../../../invite
+        MICRO_TEST_TIMEOUT: 6m
         

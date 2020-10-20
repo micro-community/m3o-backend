@@ -31,6 +31,7 @@ const (
 var letterRunes = []rune("abcdefghijklmnopqrstuvwxyz")
 
 func randStringRunes(n int) string {
+	rand.Seed(time.Now().Unix())
 	b := make([]rune, n)
 	for i := range b {
 		b[i] = letterRunes[rand.Intn(len(letterRunes))]
@@ -44,7 +45,7 @@ func testEmail(nth int) string {
 	if nth == 0 {
 		return fmt.Sprintf("platform+citest+%v@m3o.com", uid)
 	}
-	return fmt.Sprintf("platform+cites+%v+%v@m3o.com", nth, uid)
+	return fmt.Sprintf("platform+citest+%v+%v@m3o.com", nth, uid)
 }
 
 func TestSignupFlow(t *testing.T) {
@@ -52,6 +53,14 @@ func TestSignupFlow(t *testing.T) {
 }
 
 func setupM3Tests(serv test.Server, t *test.T) {
+	setupM3TestsImpl(serv, t, false)
+}
+
+func setupFreeM3Tests(serv test.Server, t *test.T) {
+	setupM3TestsImpl(serv, t, true)
+}
+
+func setupM3TestsImpl(serv test.Server, t *test.T, freeTier bool) {
 	envToConfigKey := map[string][]string{
 		"MICRO_STRIPE_API_KEY":                      {"micro.payments.stripe.api_key"},
 		"MICRO_SENDGRID_API_KEY":                    {"micro.emails.sendgrid.api_key"},
@@ -64,19 +73,35 @@ func setupM3Tests(serv test.Server, t *test.T) {
 		"MICRO_STRIPE_ADDITIONAL_SERVICES_PRICE_ID": {"micro.subscriptions.additional_services_price_id"},
 	}
 
-	for envKey, configKeys := range envToConfigKey {
-		val := os.Getenv(envKey)
-		if len(val) == 0 {
-			t.Fatalf("'%v' flag is missing", envKey)
-		}
-		for _, configKey := range configKeys {
-			outp, err := serv.Command().Exec("config", "set", configKey, val)
-			if err != nil {
-				t.Fatal(string(outp))
+	if err := test.Try("Set up config values", t, func() ([]byte, error) {
+		for envKey, configKeys := range envToConfigKey {
+			val := os.Getenv(envKey)
+			if len(val) == 0 {
+				t.Fatalf("'%v' flag is missing", envKey)
+			}
+			for _, configKey := range configKeys {
+				outp, err := serv.Command().Exec("config", "set", configKey, val)
+				if err != nil {
+					return outp, err
+				}
 			}
 		}
+		if freeTier {
+			outp, err := serv.Command().Exec("config", "set", "micro.signup.no_payment", "true")
+			if err != nil {
+				return outp, err
+			}
+			outp, err = serv.Command().Exec("config", "set", "micro.signup.message", "Finishing signup for %s")
+			if err != nil {
+				return outp, err
+			}
+
+		}
+		return serv.Command().Exec("config", "set", "micro.billing.max_included_services", "3")
+	}, 10*time.Second); err != nil {
+		t.Fatal(err)
+		return
 	}
-	serv.Command().Exec("config", "set", "micro.billing.max_included_services", "3")
 
 	services := []struct {
 		envVar string
@@ -84,7 +109,7 @@ func setupM3Tests(serv test.Server, t *test.T) {
 	}{
 		{envVar: "M3O_INVITE_SVC", deflt: "../../../invite"},
 		{envVar: "M3O_SIGNUP_SVC", deflt: "../../../signup"},
-		{envVar: "M3O_STRIPE_SVC", deflt: "../../../payments/provider/stripe"},
+		{envVar: "M3O_STRIPE_SVC", deflt: "../../../payments"},
 		{envVar: "M3O_CUSTOMERS_SVC", deflt: "../../../customers"},
 		{envVar: "M3O_NAMESPACES_SVC", deflt: "../../../namespaces"},
 		{envVar: "M3O_SUBSCRIPTIONS_SVC", deflt: "../../../subscriptions"},
@@ -105,12 +130,18 @@ func setupM3Tests(serv test.Server, t *test.T) {
 		if err != nil {
 			return outp, err
 		}
-		if !strings.Contains(string(outp), "stripe") ||
-			!strings.Contains(string(outp), "signup") ||
-			!strings.Contains(string(outp), "invite") ||
-			!strings.Contains(string(outp), "emails") ||
-			!strings.Contains(string(outp), "customers") {
-			return outp, errors.New("Can't find required services in list")
+		list := []string{"payment", "signup", "invite", "emails", "customers"}
+		logOutp := []byte{}
+		fail := false
+		for _, s := range list {
+			if !strings.Contains(string(outp), s) {
+				o, _ := serv.Command().Exec("logs", s)
+				logOutp = append(logOutp, o...)
+				fail = true
+			}
+		}
+		if fail {
+			return append(outp, logOutp...), errors.New("Can't find required services in list")
 		}
 		return outp, err
 	}, 180*time.Second); err != nil {
@@ -194,7 +225,7 @@ func testSignupFlow(t *test.T) {
 		outp, err := cmd.CombinedOutput()
 		if err == nil {
 			t.Fatalf("Expected an error for login but got none")
-		} else if !strings.Contains(string(outp), "signup.notallowed") {
+		} else if !strings.Contains(string(outp), "You have not been invited to the service") {
 			t.Fatal(string(outp))
 		}
 		wg.Done()
@@ -224,6 +255,7 @@ func testSignupFlow(t *test.T) {
 	if t.Failed() {
 		return
 	}
+	t.Logf("Signup 1 complete %s", time.Now())
 	outp, err := serv.Command().Exec("user", "config", "get", "namespaces."+serv.Env()+".current")
 	if err != nil {
 		t.Fatalf("Error getting namespace: %v", err)
@@ -276,6 +308,7 @@ func testSignupFlow(t *test.T) {
 	if t.Failed() {
 		return
 	}
+	t.Logf("Signup 2 complete %s", time.Now())
 	outp, err = serv.Command().Exec("user", "config", "get", "namespaces."+serv.Env()+".current")
 	if err != nil {
 		t.Fatalf("Error getting namespace: %v", err)
@@ -292,6 +325,7 @@ func testSignupFlow(t *test.T) {
 	logout(serv, t)
 
 	signup(serv, t, newEmail2, password, signupOptions{inviterEmail: email, xthInvitee: 2, isInvitedToNamespace: true, shouldJoin: true})
+	t.Logf("Signup 3 complete %s", time.Now())
 	if t.Failed() {
 		return
 	}
@@ -634,32 +668,34 @@ func testServicesSubscription(t *test.T) {
 	changeId := ""
 	test.Try("Get changes", t, func() ([]byte, error) {
 		outp, err := exec.Command("micro", envFlag, adminConfFlag, "billing", "updates").CombinedOutput()
+		outp1, _ := exec.Command("micro", envFlag, adminConfFlag, "logs", "billing").CombinedOutput()
+		fulloutp := append(outp, outp1...)
 		if err != nil {
-			return outp, err
+			return fulloutp, err
 		}
 		updatesRsp := map[string]interface{}{}
 		err = json.Unmarshal(outp, &updatesRsp)
 		if err != nil {
-			return outp, err
+			return fulloutp, err
 		}
 		updates, ok := updatesRsp["updates"].([]interface{})
 		if !ok {
-			return outp, errors.New("Unexpected output")
+			return fulloutp, errors.New("Unexpected output")
 		}
 		if len(updates) == 0 {
-			return outp, errors.New("No updates found")
+			return fulloutp, errors.New("No updates found")
 		}
 		if updates[0].(map[string]interface{})["quantityTo"].(string) != "1" {
-			return outp, errors.New("Quantity should be 1")
+			return fulloutp, errors.New("Quantity should be 1")
 		}
 		changeId = updates[0].(map[string]interface{})["id"].(string)
 		if !strings.Contains(string(outp), "Additional services") {
-			return outp, errors.New("unexpected output")
+			return fulloutp, errors.New("unexpected output")
 		}
 		if strings.Contains(string(outp), "Additional users") {
-			return outp, errors.New("unexpected output")
+			return fulloutp, errors.New("unexpected output")
 		}
-		return outp, err
+		return fulloutp, err
 	}, 90*time.Second)
 
 	test.Try("Apply change", t, func() ([]byte, error) {
@@ -677,6 +713,25 @@ func testServicesSubscription(t *test.T) {
 	if sub.Quantity != 1 {
 		t.Fatalf("Quantity should be 1, but it's %v", sub.Quantity)
 	}
+
+	test.Try("Get changes again", t, func() ([]byte, error) {
+		outp, err := exec.Command("micro", envFlag, adminConfFlag, "billing", "updates").CombinedOutput()
+		if err != nil {
+			return outp, err
+		}
+		outp1, _ := exec.Command("micro", envFlag, adminConfFlag, "logs", "billing").CombinedOutput()
+		fulloutp := append(outp, outp1...)
+		updatesRsp := map[string]interface{}{}
+		err = json.Unmarshal(outp, &updatesRsp)
+		if err != nil {
+			return fulloutp, err
+		}
+		updates, ok := updatesRsp["updates"].([]interface{})
+		if ok && len(updates) > 0 {
+			return fulloutp, errors.New("Updates found when there should be none")
+		}
+		return fulloutp, err
+	}, 20*time.Second)
 }
 
 func TestUsersSubscription(t *testing.T) {
@@ -791,6 +846,7 @@ type signupOptions struct {
 	shouldJoin           bool
 	inviterEmail         string
 	xthInvitee           int
+	freeTier             bool
 }
 
 func signup(serv test.Server, t *test.T, email, password string, opts signupOptions) {
@@ -816,9 +872,20 @@ func signup(serv test.Server, t *test.T, email, password string, opts signupOpti
 			t.Fatal(string(outp))
 			return
 		}
+		if !opts.shouldJoin {
+			if !opts.freeTier && !strings.Contains(string(outp), "Please complete signup at") {
+				t.Fatal(string(outp))
+				return
+			}
+			if opts.freeTier && !strings.Contains(string(outp), "Finishing signup for") {
+				t.Fatal(string(outp))
+				return
+			}
+		}
 	}()
 	go func() {
 		time.Sleep(60 * time.Second)
+		t.Logf("Killing process")
 		cmd.Process.Kill()
 	}()
 
@@ -884,7 +951,7 @@ func signup(serv test.Server, t *test.T, email, password string, opts signupOpti
 		}
 	}
 
-	if !opts.shouldJoin {
+	if !opts.shouldJoin && !opts.freeTier {
 		time.Sleep(5 * time.Second)
 		sc := stripe_client.New(os.Getenv("MICRO_STRIPE_API_KEY"), nil)
 		pm, err := sc.PaymentMethods.New(
@@ -901,6 +968,7 @@ func signup(serv test.Server, t *test.T, email, password string, opts signupOpti
 			t.Fatal(err)
 			return
 		}
+		t.Log("Added a new payment method to Stripe")
 
 		// using a curl here as `call` redirection to micro namespace doesnt work properly, unlike
 		// dynamic commands
@@ -926,79 +994,91 @@ func signup(serv test.Server, t *test.T, email, password string, opts signupOpti
 		if len(rsp) > 0 {
 			t.Fatal(rsp)
 		}
+		t.Log("Added a new payment method to M3O")
+
 	}
 
-	// Some gotchas for this: while the stripe api documentation online
-	// shows prices and plans being separate entitires, even v71 version of the
-	// go library only has plans. However, it seems like the prices are under plans too.
-	test.Try("Check subscription in stripe", t, func() ([]byte, error) {
-		sc := stripe_client.New(os.Getenv("MICRO_STRIPE_API_KEY"), nil)
-		subListParams := &stripe.SubscriptionListParams{}
-		subListParams.Limit = stripe.Int64(20)
-		subListParams.AddExpand("data.customer")
-		iter := sc.Subscriptions.List(subListParams)
-		count := 0
-		// email -> plan/price id -> subscription
-		userPlans := map[string]*stripe.Subscription{}
-		inviterPlans := map[string]*stripe.Subscription{}
-		for iter.Next() {
-			if count > 20 {
-				break
-			}
-			count++
+	if !opts.freeTier {
 
-			c := iter.Subscription()
-			if len(opts.inviterEmail) > 0 && c.Customer.Email == opts.inviterEmail {
-				if c.Plan != nil {
-					inviterPlans[c.Plan.ID] = c
+		// Some gotchas for this: while the stripe api documentation online
+		// shows prices and plans being separate entities, even v71 version of the
+		// go library only has plans. However, it seems like the prices are under plans too.
+		test.Try("Check subscription in stripe", t, func() ([]byte, error) {
+			sc := stripe_client.New(os.Getenv("MICRO_STRIPE_API_KEY"), nil)
+			subListParams := &stripe.SubscriptionListParams{}
+			subListParams.Limit = stripe.Int64(20)
+			subListParams.AddExpand("data.customer")
+			iter := sc.Subscriptions.List(subListParams)
+			count := 0
+			// email -> plan/price id -> subscription
+			userPlans := map[string]*stripe.Subscription{}
+			inviterPlans := map[string]*stripe.Subscription{}
+			for iter.Next() {
+				if count > 20 {
+					break
+				}
+				count++
+
+				c := iter.Subscription()
+				if len(opts.inviterEmail) > 0 && c.Customer.Email == opts.inviterEmail {
+					if c.Plan != nil {
+						inviterPlans[c.Plan.ID] = c
+					}
+				}
+				if c.Customer.Email == email {
+					if c.Plan != nil {
+						userPlans[c.Plan.ID] = c
+					}
 				}
 			}
-			if c.Customer.Email == email {
-				if c.Plan != nil {
-					userPlans[c.Plan.ID] = c
+
+			if opts.shouldJoin {
+				priceID := os.Getenv("MICRO_STRIPE_ADDITIONAL_USERS_PRICE_ID")
+				sub, found := inviterPlans[priceID]
+				if !found {
+					return nil, fmt.Errorf("Subscription with price ID %v not found", priceID)
+				}
+				if sub.Quantity != int64(opts.xthInvitee) {
+					return nil, fmt.Errorf("Subscription quantity '%v' should match invitee number '%v", sub.Quantity, opts.xthInvitee)
+				}
+			} else {
+				planID := os.Getenv("MICRO_STRIPE_PLAN_ID")
+				sub, found := userPlans[planID]
+				if !found {
+					return nil, fmt.Errorf("Subscription with plan ID %v not found", planID)
+				}
+				if sub.Quantity != 1 {
+					return nil, fmt.Errorf("Subscription quantity should be 1 but is %v", sub.Quantity)
 				}
 			}
-		}
-
-		if opts.shouldJoin {
-			priceID := os.Getenv("MICRO_STRIPE_ADDITIONAL_USERS_PRICE_ID")
-			sub, found := inviterPlans[priceID]
-			if !found {
-				return nil, fmt.Errorf("Subscription with price ID %v not found", priceID)
-			}
-			if sub.Quantity != int64(opts.xthInvitee) {
-				return nil, fmt.Errorf("Subscription quantity '%v' should match invitee number '%v", sub.Quantity, opts.xthInvitee)
-			}
-		} else {
-			planID := os.Getenv("MICRO_STRIPE_PLAN_ID")
-			sub, found := userPlans[planID]
-			if !found {
-				return nil, fmt.Errorf("Subscription with plan ID %v not found", planID)
-			}
-			if sub.Quantity != 1 {
-				return nil, fmt.Errorf("Subscription quantity should be 1 but is %v", sub.Quantity)
-			}
-		}
-		return nil, nil
-	}, 50*time.Second)
-
+			t.Logf("Subscription checked")
+			return nil, nil
+		}, 50*time.Second)
+	}
 	test.Try("Check customer marked active", t, func() ([]byte, error) {
 		outp, err := exec.Command("micro", envFlag, adminConfFlag, "customers", "read", "--email="+email).CombinedOutput()
 		if err != nil {
+			t.Logf("Error checking customer status %s %s", string(outp), err)
 			return outp, err
 		}
 		if !strings.Contains(string(outp), `"status": "active"`) {
+			outp, _ = exec.Command("micro", envFlag, adminConfFlag, "logs", "customers").CombinedOutput()
 			return outp, fmt.Errorf("Customer status is not active")
 		}
+		t.Logf("Customer marked active")
 		return nil, nil
 	}, 60*time.Second)
 
 	// Don't wait if a test is already failed, this is a quirk of the
 	// test framework @todo fix this quirk
 	if t.Failed() {
+		t.Logf("Failed signup")
 		return
 	}
+	t.Logf("Waiting at end of signup")
 	wg.Wait()
+	t.Logf("Signup complete for %s", email)
+
 }
 
 func getSrcString(envvar, dflt string) string {
@@ -1076,4 +1156,283 @@ func testInviteEmailValidation(t *test.T) {
 		t.Fatalf("Expected a 400 bad request error %s", string(outp))
 	}
 
+}
+
+func TestSubCancellation(t *testing.T) {
+	test.TrySuite(t, testSubCancellation, retryCount)
+}
+
+func testSubCancellation(t *test.T) {
+	t.Parallel()
+
+	serv := test.NewServer(t, test.WithLogin())
+	defer serv.Close()
+	if err := serv.Run(); err != nil {
+		return
+	}
+
+	setupM3Tests(serv, t)
+	email := testEmail(0)
+	password := "PassWord1@"
+
+	test.Try("Send invite", t, func() ([]byte, error) {
+		return serv.Command().Exec("invite", "user", "--email="+email)
+	}, 5*time.Second)
+
+	signup(serv, t, email, password, signupOptions{isInvitedToNamespace: false, shouldJoin: false})
+	if t.Failed() {
+		return
+	}
+
+	outp, err := serv.Command().Exec("user", "config")
+	if err != nil {
+		t.Fatalf("Error getting user config %s %s", string(outp), err)
+	}
+
+	ns := ""
+	for _, v := range strings.Split(string(outp), "\n") {
+		if !strings.HasPrefix(v, "namespace: ") {
+			continue
+		}
+		ns = strings.TrimPrefix(v, "namespace: ")
+	}
+	if len(ns) == 0 {
+		t.Fatalf("Unable to determine the namespace of the user %s", string(outp))
+	}
+
+	adminConfFlag := "-c=" + serv.Command().Config + ".admin"
+	envFlag := "-e=" + serv.Env()
+	outp, err = exec.Command("micro", envFlag, adminConfFlag, "customers", "read", "--email="+email).CombinedOutput()
+	if err != nil {
+		t.Fatalf("Error looking up customer ID %s %s ", string(outp), err)
+	}
+	type cs struct {
+		Id string `json:"id"`
+	}
+	type rsp struct {
+		Customer cs `json:"customer"`
+	}
+	csObj := &rsp{}
+	if err := json.Unmarshal(outp, csObj); err != nil {
+		t.Fatalf("Error unmarshalling customer %s %s ", string(outp), err)
+	}
+	outp, err = exec.Command("micro", envFlag, adminConfFlag, "subscriptions", "cancel", "--customerID="+csObj.Customer.Id).CombinedOutput()
+	if err != nil {
+		t.Fatalf("Error cancelling %+v %s %s ", csObj, string(outp), err)
+	}
+	// check stripe for sub cancelled
+	subs := getSubscriptions(t, email)
+	for _, v := range subs {
+		if v.Status != stripe.SubscriptionStatusCanceled {
+			t.Fatalf("Subscription was not cancelled %+v", v)
+		}
+	}
+	test.Try("Check customer deleted", t, func() ([]byte, error) {
+		// check customer is deleted which happens async
+		outp, err = exec.Command("micro", envFlag, adminConfFlag, "customers", "read", "--email="+email).CombinedOutput()
+		if !strings.Contains(string(outp), "not found") {
+			return outp, fmt.Errorf("Customer should not be found %s", err)
+		}
+		return nil, nil
+	}, 60*time.Second)
+	// check namespace is gone
+	outp, err = exec.Command("micro", envFlag, adminConfFlag, "namespaces", "list", "--user="+csObj.Customer.Id).CombinedOutput()
+	if strings.Contains(string(outp), "namespaces") {
+		t.Fatalf("Customer should not have any namespaces %s %s", string(outp), err)
+	}
+	// check auth is gone
+	outp, err = exec.Command("micro", envFlag, adminConfFlag, "store", "list", "--table", "auth").CombinedOutput()
+	if strings.Contains(string(outp), ns) {
+		t.Fatalf("Customer should not have any auth remnants %s %s", string(outp), err)
+	}
+
+	// try the signup again with this email. should succeed if we've deleted everything properly
+	signup(serv, t, email, password, signupOptions{isInvitedToNamespace: false, shouldJoin: false})
+	if t.Failed() {
+		return
+	}
+
+	outp, err = serv.Command().Exec("user", "config")
+	if err != nil {
+		t.Fatalf("Error getting user config %s %s", string(outp), err)
+	}
+	// check if we've correctly given a new namespace, would be bad if we gave them the same
+	newNS := ""
+	for _, v := range strings.Split(string(outp), "\n") {
+		if !strings.HasPrefix(v, "namespace: ") {
+			continue
+		}
+		newNS = strings.TrimPrefix(v, "namespace: ")
+	}
+	if len(newNS) == 0 {
+		t.Fatalf("Unable to determine the namespace of the user %s", string(outp))
+	}
+	if newNS == ns {
+		t.Fatalf("Error, we've reassigned an old namespace %s", ns)
+	}
+	// check we have a new customer ID
+	outp, err = exec.Command("micro", envFlag, adminConfFlag, "customers", "read", "--email="+email).CombinedOutput()
+	if err != nil {
+		t.Fatalf("Error looking up customer ID %s %s ", string(outp), err)
+	}
+	newCsObj := &rsp{}
+	if err := json.Unmarshal(outp, newCsObj); err != nil {
+		t.Fatalf("Error unmarshalling customer %s %s ", string(outp), err)
+	}
+	if newCsObj.Customer.Id == csObj.Customer.Id {
+		t.Fatalf("Error, we've reassigned an old customerID %s", ns)
+	}
+
+}
+
+func TestFreeSignupFlow(t *testing.T) {
+	test.TrySuite(t, testFreeSignupFlow, retryCount)
+}
+
+func testFreeSignupFlow(t *test.T) {
+	t.Parallel()
+
+	serv := test.NewServer(t, test.WithLogin())
+	defer serv.Close()
+	if err := serv.Run(); err != nil {
+		return
+	}
+
+	setupFreeM3Tests(serv, t)
+
+	// flags
+	envFlag := "-e=" + serv.Env()
+	confFlag := "-c=" + serv.Command().Config
+
+	email := testEmail(0)
+
+	time.Sleep(5 * time.Second)
+
+	cmd := exec.Command("micro", envFlag, confFlag, "signup")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		outp, err := cmd.CombinedOutput()
+		if err == nil {
+			t.Fatalf("Expected an error for login but got none")
+		} else if !strings.Contains(string(outp), "You have not been invited to the service") {
+			t.Fatal(string(outp))
+		}
+		wg.Done()
+	}()
+	go func() {
+		time.Sleep(20 * time.Second)
+		cmd.Process.Kill()
+	}()
+	_, err = io.WriteString(stdin, email+"\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wg.Wait()
+	if t.Failed() {
+		return
+	}
+
+	test.Try("Send invite", t, func() ([]byte, error) {
+		return serv.Command().Exec("invite", "user", "--email="+email)
+	}, 5*time.Second)
+
+	// Log out of the admin account to start testing signups
+	logout(serv, t)
+
+	password := "PassWord1@"
+	signup(serv, t, email, password, signupOptions{isInvitedToNamespace: false, shouldJoin: false, freeTier: true})
+	if t.Failed() {
+		return
+	}
+	t.Logf("Signup 1 complete %s", time.Now())
+	outp, err := serv.Command().Exec("user", "config", "get", "namespaces."+serv.Env()+".current")
+	if err != nil {
+		t.Fatalf("Error getting namespace: %v", err)
+		return
+	}
+	ns := strings.TrimSpace(string(outp))
+
+	if strings.Count(ns, "-") != 2 {
+		t.Fatalf("Expected 2 dashes in namespace but namespace is: %v", ns)
+		return
+	}
+
+	t.T().Logf("Namespace set is %v", ns)
+
+	test.Try("Find account", t, func() ([]byte, error) {
+		outp, err = serv.Command().Exec("auth", "list", "accounts")
+		if err != nil {
+			return outp, err
+		}
+		if !strings.Contains(string(outp), email) {
+			return outp, errors.New("Account not found")
+		}
+		if strings.Contains(string(outp), "default") {
+			return outp, errors.New("Default account should not be present in the namespace")
+		}
+		return outp, nil
+	}, 5*time.Second)
+
+	newEmail := testEmail(1)
+	newEmail2 := testEmail(2)
+
+	test.Login(serv, t, email, password)
+
+	if err := test.Try("Send invite", t, func() ([]byte, error) {
+		return serv.Command().Exec("invite", "user", "--email="+newEmail, "--namespace="+ns)
+	}, 7*time.Second); err != nil {
+		t.Fatal(err)
+		return
+	}
+	if err := test.Try("Send invite", t, func() ([]byte, error) {
+		return serv.Command().Exec("invite", "user", "--email="+newEmail2, "--namespace="+ns)
+	}, 7*time.Second); err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	logout(serv, t)
+
+	signup(serv, t, newEmail, password, signupOptions{inviterEmail: email, xthInvitee: 1, isInvitedToNamespace: true, shouldJoin: true, freeTier: true})
+	if t.Failed() {
+		return
+	}
+	t.Logf("Signup 2 complete %s", time.Now())
+	outp, err = serv.Command().Exec("user", "config", "get", "namespaces."+serv.Env()+".current")
+	if err != nil {
+		t.Fatalf("Error getting namespace: %v", err)
+		return
+	}
+	newNs := strings.TrimSpace(string(outp))
+	if newNs != ns {
+		t.Fatalf("Namespaces should match, old: %v, new: %v", ns, newNs)
+		return
+	}
+
+	t.T().Logf("Namespace joined: %v", string(outp))
+
+	logout(serv, t)
+
+	signup(serv, t, newEmail2, password, signupOptions{inviterEmail: email, xthInvitee: 2, isInvitedToNamespace: true, shouldJoin: true, freeTier: true})
+	t.Logf("Signup 3 complete %s", time.Now())
+	if t.Failed() {
+		return
+	}
+	outp, err = serv.Command().Exec("user", "config", "get", "namespaces."+serv.Env()+".current")
+	if err != nil {
+		t.Fatalf("Error getting namespace: %v", err)
+		return
+	}
+	newNs = strings.TrimSpace(string(outp))
+	if newNs != ns {
+		t.Fatalf("Namespaces should match, old: %v, new: %v", ns, newNs)
+		return
+	}
+
+	t.T().Logf("Namespace joined: %v", string(outp))
 }

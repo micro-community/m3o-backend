@@ -12,13 +12,12 @@ import (
 	sproto "github.com/m3o/services/payments/provider/proto"
 	subproto "github.com/m3o/services/subscriptions/proto"
 	uproto "github.com/m3o/services/usage/proto"
-	goclient "github.com/micro/go-micro/v3/client"
-	"github.com/micro/go-micro/v3/errors"
-	merrors "github.com/micro/go-micro/v3/errors"
-	"github.com/micro/go-micro/v3/store"
 	"github.com/micro/micro/v3/service/auth"
+	goclient "github.com/micro/micro/v3/service/client"
 	"github.com/micro/micro/v3/service/config"
 	mconfig "github.com/micro/micro/v3/service/config"
+	"github.com/micro/micro/v3/service/errors"
+	merrors "github.com/micro/micro/v3/service/errors"
 	log "github.com/micro/micro/v3/service/logger"
 	mstore "github.com/micro/micro/v3/service/store"
 	"github.com/stripe/stripe-go/v71"
@@ -50,16 +49,52 @@ func NewBilling(ns nsproto.NamespacesService,
 	ss sproto.ProviderService,
 	us uproto.UsageService,
 	subs subproto.SubscriptionsService) *Billing {
-	// this is only here for prototyping, should use subscriptions service properly
-	additionalUsersPriceID := mconfig.Get("micro", "subscriptions", "additional_users_price_id").String("")
-	additionalServicesPriceID := mconfig.Get("micro", "subscriptions", "additional_services_price_id").String("")
-	planID := mconfig.Get("micro", "subscriptions", "plan_id").String("")
-	maxIncludedServices := mconfig.Get("micro", "billing", "max_included_services").Int(10)
 
-	apiKey := config.Get("micro", "payments", "stripe", "api_key").String("")
+	// this is only here for prototyping, should use subscriptions service properly
+	// an upside for that will be also the fact that we don't have to load values one by one but can use Scan
+	val, err := mconfig.Get("micro.subscriptions.additional_users_price_id")
+	if err != nil {
+		log.Fatalf("Additional users price id can't be loaded: %v", err)
+	}
+	additionalUsersPriceID := val.String("")
+	if len(additionalUsersPriceID) == 0 {
+		log.Fatal("Additional userss price id is empty")
+	}
+
+	val, err = mconfig.Get("micro.subscriptions.additional_services_price_id")
+	if err != nil {
+		log.Fatalf("Additional services price id can't be loaded: %v", err)
+	}
+	additionalServicesPriceID := val.String("")
+	if len(additionalServicesPriceID) == 0 {
+		log.Fatal("Additional services price id is empty")
+	}
+
+	val, err = mconfig.Get("micro.subscriptions.plan_id")
+	if err != nil {
+		log.Fatalf("Can't load subscription plan id: %v", err)
+	}
+	planID := val.String("")
+	if len(planID) == 0 {
+		log.Fatal("Plan id is empty")
+	}
+
+	val, err = mconfig.Get("micro.billing.max_included_services")
+	if err != nil {
+		log.Warnf("Can't load max included services: %v", err)
+	}
+	maxIncludedServices := val.Int(10)
+
+	val, err = config.Get("micro.payments.stripe.api_key")
+	if err != nil {
+		log.Warnf("Can't load stripe api key: %v", err)
+	}
+	apiKey := val.String("")
+
 	if len(apiKey) == 0 {
 		log.Fatalf("Missing required config: micro.payments.stripe.api_key")
 	}
+
 	b := &Billing{
 		stripeClient:              client.New(apiKey, nil),
 		ns:                        ns,
@@ -75,6 +110,8 @@ func NewBilling(ns nsproto.NamespacesService,
 	return b
 }
 
+// Updates returns currently active update suggestions for the current month.
+// Once the update is applied, it should disappear from this list.
 func (b *Billing) Updates(ctx context.Context, req *billing.UpdatesRequest, rsp *billing.UpdatesResponse) error {
 	acc, ok := auth.AccountFromContext(ctx)
 	if !ok {
@@ -89,9 +126,13 @@ func (b *Billing) Updates(ctx context.Context, req *billing.UpdatesRequest, rsp 
 		req.Namespace = acc.Issuer
 	}
 
-	key := updatePrefix
+	month := time.Now().Format(monthFormat)
+	// @todo accept a month request parameter
+	// for listing historic update suggestions
+
+	key := updatePrefix + month
 	if len(req.Namespace) > 0 {
-		key = updateByNamespacePrefix + req.Namespace + "/"
+		key = updateByNamespacePrefix + req.Namespace + "/" + month
 	}
 	limit := req.Limit
 	if limit == 0 {
@@ -101,7 +142,7 @@ func (b *Billing) Updates(ctx context.Context, req *billing.UpdatesRequest, rsp 
 	log.Infof("Received Billing.Updates request, listing with key '%v', limit '%v'", key, limit)
 
 	records, err := mstore.Read("", mstore.Prefix(key), mstore.Limit(uint(limit)), mstore.Offset(uint(req.Offset)))
-	if err != nil && err != store.ErrNotFound {
+	if err != nil && err != mstore.ErrNotFound {
 		return merrors.InternalServerError("billing.Updates", "Error listing store: %v", err)
 	}
 
@@ -156,7 +197,13 @@ func (b *Billing) Apply(ctx context.Context, req *billing.ApplyRequest, rsp *bil
 		OwnerID:  u.Customer,
 		Quantity: u.QuantityTo,
 	})
-	return err
+	if err != nil {
+		return merrors.InternalServerError("billing.Apply", "Error calling subscriptions update: %v", err)
+	}
+
+	// Once the Update is applied, we don't want them to appear
+	// in the list returned by the `Updates` endpoint
+	return deleteMonth(time.Unix(u.Created, 0).Format(monthFormat), u.Namespace)
 }
 
 // Portal returns the billing portal address the customers can go to to manager their subscriptons
@@ -254,6 +301,14 @@ func (b *Billing) loop() {
 
 			for _, max := range maxs {
 				log.Infof("Processing namespace '%v'", max.namespace)
+
+				// First we delete the existing record
+				month := time.Now().Format(monthFormat)
+				err = deleteMonth(month, max.namespace)
+				if err != nil {
+					log.Errorf("Error deleting month %v for namespace %v", month, max.namespace)
+				}
+
 				customer, found := namespaceToOwner[max.namespace]
 				if !found || len(customer) == 0 {
 					log.Warnf("Owner customer id not found for namespace '%v'", max.namespace)
@@ -312,6 +367,8 @@ func (b *Billing) loop() {
 					quantityShouldBe = 0
 				}
 				if quantity != quantityShouldBe {
+					log.Infof("Services count needs amending. Saving")
+
 					err = saveUpdate(update{
 						ID:           uuid.New().String(),
 						PriceID:      b.additionalServicesPriceID,
@@ -337,24 +394,32 @@ func saveUpdate(record update) error {
 	record.Created = tim.Unix()
 	val, _ := json.Marshal(record)
 	month := tim.Format(monthFormat)
-	err := mstore.Write(&store.Record{
+	err := mstore.Write(&mstore.Record{
 		Key:   fmt.Sprintf("%v%v/%v", updatePrefix, month, record.Namespace),
 		Value: val,
 	})
 	if err != nil {
 		return err
 	}
-	err = mstore.Write(&store.Record{
+	err = mstore.Write(&mstore.Record{
 		Key:   record.ID,
 		Value: val,
 	})
 	if err != nil {
 		return err
 	}
-	return mstore.Write(&store.Record{
+	return mstore.Write(&mstore.Record{
 		Key:   fmt.Sprintf("%v%v/%v", updateByNamespacePrefix, record.Namespace, month),
 		Value: val,
 	})
+}
+
+func deleteMonth(month, namespace string) error {
+	err := mstore.Delete(fmt.Sprintf("%v%v/%v", updateByNamespacePrefix, namespace, month))
+	if err != nil {
+		return err
+	}
+	return mstore.Delete(fmt.Sprintf("%v%v/%v", updatePrefix, month, namespace))
 }
 
 type max struct {
