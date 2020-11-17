@@ -6,6 +6,7 @@ option go_package = "proto;usage";
 
 service Usage {
 	rpc Read(ReadRequest) returns (ReadResponse) {}
+	rpc List(ListRequest) returns (ListResponse) {}
 }
 
 message Account {
@@ -21,4 +22,17 @@ message ReadRequest {
 
 message ReadResponse {
 	repeated Account accounts = 1;
+}
+
+message ListRequest {}
+
+message ListResponse {
+	repeated Account accounts = 1;
+	Summary summary = 2;
+}
+
+message Summary {
+	int64 namespace_count = 1;
+	int64 user_count = 2;
+	int64 services_count = 3;
 }
