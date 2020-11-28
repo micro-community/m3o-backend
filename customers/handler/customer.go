@@ -35,6 +35,13 @@ const (
 	prefixCustomerEmail = "email/"
 )
 
+var validStatus = map[string]bool{
+	statusUnverified: true,
+	statusVerified:   true,
+	statusActive:     true,
+	statusDeleted:    true,
+}
+
 type CustomerModel struct {
 	ID      string
 	Email   string
@@ -207,10 +214,18 @@ func (c *Customers) Delete(ctx context.Context, request *customer.DeleteRequest,
 	if err := authorizeCall(ctx); err != nil {
 		return err
 	}
-	if strings.TrimSpace(request.Id) == "" {
-		return errors.BadRequest("customers.delete", "ID is required")
+	if strings.TrimSpace(request.Id) == "" && strings.TrimSpace(request.Email) == "" {
+		return errors.BadRequest("customers.delete", "ID or Email is required")
 	}
-	if err := c.deleteCustomer(ctx, request.Id); err != nil {
+	if len(request.Id) == 0 {
+		c, err := readCustomerByEmail(request.Email)
+		if err != nil {
+			return err
+		}
+		request.Id = c.ID
+	}
+
+	if err := c.deleteCustomer(ctx, request.Id, request.Force); err != nil {
 		log.Errorf("Error deleting customer %s %s", request.Id, err)
 		return errors.InternalServerError("customers.delete", "Error deleting customer")
 	}
@@ -271,7 +286,7 @@ func authorizeCall(ctx context.Context) error {
 	return nil
 }
 
-func (c *Customers) deleteCustomer(ctx context.Context, customerID string) error {
+func (c *Customers) deleteCustomer(ctx context.Context, customerID string, force bool) error {
 	// auth accounts are tied to namespaces so get that list and delete all
 	rsp, err := c.namespacesService.List(ctx, &nsproto.ListRequest{User: customerID}, client.WithAuthToken())
 	if err != nil {
@@ -300,11 +315,20 @@ func (c *Customers) deleteCustomer(ctx context.Context, customerID string) error
 			return err
 		}
 	}
-
+	var cust *CustomerModel
 	// delete customer
-	cust, err := updateCustomerStatusByID(customerID, statusDeleted)
-	if err != nil {
-		return err
+	if !force {
+		cust, err = updateCustomerStatusByID(customerID, statusDeleted)
+		if err != nil {
+			return err
+		}
+	} else {
+		// actually delete not just update the status
+		cust, err = c.forceDelete(customerID)
+		if err != nil {
+			return err
+		}
+
 	}
 
 	// Publish the event
@@ -324,6 +348,21 @@ func (c *Customers) deleteCustomer(ctx context.Context, customerID string) error
 	return nil
 }
 
+func (c *Customers) forceDelete(customerID string) (*CustomerModel, error) {
+	cust, err := readCustomer(customerID, prefixCustomer)
+	if err != nil {
+		return nil, err
+	}
+	if err := mstore.Delete(prefixCustomerEmail + cust.Email); err != nil {
+		return nil, err
+	}
+	if err := mstore.Delete(prefixCustomer + customerID); err != nil {
+		return nil, err
+	}
+
+	return cust, nil
+}
+
 // ignoreDeleteError will ignore any 400 or 404 errors returned, useful for idempotent deletes
 func ignoreDeleteError(err error) error {
 	if err != nil {
@@ -337,4 +376,61 @@ func ignoreDeleteError(err error) error {
 		return err
 	}
 	return nil
+}
+
+// List is a temporary endpoint which will very quickly become unusable due to the way it lists entries
+func (c *Customers) List(ctx context.Context, request *customer.ListRequest, response *customer.ListResponse) error {
+	if err := authorizeCall(ctx); err != nil {
+		return err
+	}
+	recs, err := mstore.Read("", mstore.Prefix(prefixCustomer))
+	if err != nil {
+		return err
+	}
+	res := []*customer.Customer{}
+	for _, rec := range recs {
+		cust := &CustomerModel{}
+		if err := json.Unmarshal(rec.Value, cust); err != nil {
+			return err
+		}
+		if cust.Status == statusDeleted {
+			// skip
+			continue
+		}
+
+		res = append(res, &customer.Customer{
+			Id:      cust.ID,
+			Status:  cust.Status,
+			Created: cust.Created,
+			Email:   cust.Email,
+			Updated: cust.Updated,
+		})
+	}
+	response.Customers = res
+	return nil
+}
+
+func (c *Customers) Update(ctx context.Context, request *customer.UpdateRequest, response *customer.UpdateResponse) error {
+	if err := authorizeCall(ctx); err != nil {
+		return err
+	}
+	cust, err := readCustomerByID(request.Customer.Id)
+	if err != nil {
+		return err
+	}
+	changed := false
+	if len(request.Customer.Status) > 0 {
+		if !validStatus[request.Customer.Status] {
+			return errors.BadRequest("customers.update.badstatus", "Invalid status passed")
+		}
+		if cust.Status != request.Customer.Status {
+			cust.Status = request.Customer.Status
+			changed = true
+		}
+	}
+	// TODO support email changing - would require reverification
+	if !changed {
+		return nil
+	}
+	return writeCustomer(cust)
 }
