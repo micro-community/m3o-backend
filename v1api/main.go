@@ -5,6 +5,8 @@ import (
 	"github.com/micro/micro/v3/service"
 	"github.com/micro/micro/v3/service/api"
 	"github.com/micro/micro/v3/service/logger"
+	"github.com/micro/micro/v3/service/registry"
+	"github.com/micro/micro/v3/service/registry/cache"
 )
 
 func main() {
@@ -20,9 +22,10 @@ func main() {
 			api.WithEndpoint(
 				&api.Endpoint{
 					Name:    "V1.Endpoint",
-					Path:    []string{"^/v1/.*$"},
+					Handler: "rpc",
 					Method:  []string{"GET", "POST", "OPTIONS", "PUT", "HEAD", "DELETE"},
-					Handler: "api",
+					Path:    []string{"^/v1/.*$"},
+					Stream:  true,
 				}),
 			api.WithEndpoint(
 				&api.Endpoint{
@@ -53,6 +56,14 @@ func main() {
 					Handler: "rpc",
 				}),
 		))
+
+	// setup caching for registry
+	regName := registry.DefaultRegistry.String()
+	if regName != "cache" {
+		logger.Infof("Setting up cached registry for %s", regName)
+		registry.DefaultRegistry = cache.New(registry.DefaultRegistry)
+	}
+
 	// Run service
 	if err := srv.Run(); err != nil {
 		logger.Fatal(err)

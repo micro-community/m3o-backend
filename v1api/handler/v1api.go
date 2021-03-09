@@ -10,20 +10,18 @@ import (
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
-
-	"github.com/micro/micro/v3/service/events"
-
-	"github.com/micro/micro/v3/service/client"
-
-	"github.com/google/uuid"
-
 	v1api "github.com/m3o/services/v1api/proto"
-	pb "github.com/micro/micro/v3/proto/api"
 	"github.com/micro/micro/v3/service/auth"
+	"github.com/micro/micro/v3/service/client"
 	"github.com/micro/micro/v3/service/context/metadata"
 	"github.com/micro/micro/v3/service/errors"
+	"github.com/micro/micro/v3/service/events"
 	log "github.com/micro/micro/v3/service/logger"
+	"github.com/micro/micro/v3/service/registry"
+	"github.com/micro/micro/v3/service/server"
 	"github.com/micro/micro/v3/service/store"
+
+	"github.com/google/uuid"
 )
 
 type V1 struct {
@@ -34,6 +32,12 @@ const (
 	storePrefixUserID    = "user"
 	storePrefixKeyID     = "key"
 	storePrefixAPI       = "api"
+)
+
+var (
+	errUnauthorized = errors.Unauthorized("v1api", "Unauthorized")
+	errInternal     = errors.InternalServerError("v1api", "Error processing request")
+	errBlocked      = errors.Forbidden("v1api.blocked", "Client is blocked")
 )
 
 type apiKeyRecord struct {
@@ -245,23 +249,16 @@ func (e *V1) checkRequestedScopes(account *auth.Account, requestedScopes []strin
 	return true
 }
 
-// Endpoint is a catch all for endpoints
-func (e *V1) Endpoint(ctx context.Context, req *pb.Request, rsp *pb.Response) error {
-	// check api key
-	authz := req.Header["Authorization"]
-	if authz == nil || len(authz.Values) == 0 {
-		return errors.Unauthorized("v1api", "Unauthorized")
+func loadAPIRec(authz string) (string, *apiKeyRecord, error) {
+	if len(authz) == 0 || !strings.HasPrefix(authz, "Bearer ") {
+		return "", nil, errUnauthorized
 	}
 
 	// do lookup on hash of key
-	key := authz.Values[0]
-	if !strings.HasPrefix(key, "Bearer ") {
-		return errors.Unauthorized("v1api", "Unauthorized")
-	}
-	key = key[7:]
+	key := authz[7:]
 	hashed, err := hashSecret(key)
 	if err != nil {
-		return errors.Unauthorized("v1api", "Unauthorized")
+		return "", nil, errUnauthorized
 	}
 	recs, err := store.Read(fmt.Sprintf("%s:%s", storePrefixHashedKey, hashed))
 	if err != nil {
@@ -270,15 +267,18 @@ func (e *V1) Endpoint(ctx context.Context, req *pb.Request, rsp *pb.Response) er
 		}
 		// not found == invalid (or even revoked)
 		log.Infof("Authz not found %+v", hashed)
-		return errors.Unauthorized("v1api", "Unauthorized")
+		return "", nil, errUnauthorized
 	}
 	// rehydrate
 	apiRec := apiKeyRecord{}
 	if err := json.Unmarshal(recs[0].Value, &apiRec); err != nil {
 		log.Errorf("Error while rehydrating api key record %s", err)
-		return errors.Unauthorized("v1api", "Unauthorized")
+		return "", nil, errUnauthorized
 	}
+	return key, &apiRec, nil
+}
 
+func verifyCallAllowed(apiRec *apiKeyRecord, reqURL string) error {
 	// checks
 	// We do 2 types of checks
 	// 1. Do the scopes of the token allow them to call the requested API? The name of the scopes correspond to the service
@@ -287,33 +287,36 @@ func (e *V1) Endpoint(ctx context.Context, req *pb.Request, rsp *pb.Response) er
 	// Type 1 check. This is a bit belt and braces to be honest, the type 2 check should probably be enough
 	scopeMatch := false
 	for _, s := range apiRec.Scopes {
-		if strings.HasPrefix(req.Url, fmt.Sprintf("/v1/%s/", s)) {
+		if strings.HasPrefix(reqURL, fmt.Sprintf("/v1/%s/", s)) {
 			scopeMatch = true
 			break
 		}
 	}
 	if !scopeMatch {
 		// TODO better error please
-		return errors.Forbidden("v1api.blocked", "Client is blocked")
+		return errBlocked
 	}
 
 	// Type 2 check
 	allowed := false
 	for prefix := range apiRec.AllowList {
-		if strings.HasPrefix(req.Url[3:], prefix) {
+		if strings.HasPrefix(reqURL[3:], prefix) {
 			allowed = true
 		}
 	}
 	if !allowed {
 		// TODO better error please
-		return errors.Forbidden("v1api.blocked", "Client is blocked")
+		return errBlocked
 	}
+	return nil
+}
 
+func refreshToken(apiRec *apiKeyRecord, key string) error {
 	// do we need to refresh the token?
 	tok, _, err := new(jwt.Parser).ParseUnverified(apiRec.Token, jwt.MapClaims{})
 	if err != nil {
 		log.Errorf("Error parsing existing jwt %s", err)
-		return errors.Unauthorized("v1api", "Unauthorized")
+		return errUnauthorized
 	}
 	if claims, ok := tok.Claims.(jwt.MapClaims); ok {
 		if !claims.VerifyExpiresAt(time.Now().Unix(), true) {
@@ -324,37 +327,38 @@ func (e *V1) Endpoint(ctx context.Context, req *pb.Request, rsp *pb.Response) er
 				auth.WithExpiry(1*time.Hour))
 			if err != nil {
 				log.Errorf("Error refreshing token %s", err)
-				return errors.InternalServerError("v1api", "Failed to refresh api key")
+				return errInternal
 			}
 			apiRec.Token = tok.AccessToken
-			if err := writeAPIRecord(&apiRec); err != nil {
+			if err := writeAPIRecord(apiRec); err != nil {
 				log.Errorf("Error updating API record %s", err)
-				return errors.InternalServerError("v1api", "Failed to refresh api key")
+				return errInternal
 			}
 		}
 	} else {
 		log.Errorf("Error parsing existing jwt claims %s", err)
-		return errors.Unauthorized("v1api", "Unauthorized")
+		return errUnauthorized
 	}
+	return nil
+}
 
-	// assume application/json for now
-	ct := "application/json"
-
-	// forward the request
-	var payload json.RawMessage
-	if len(req.Body) > 0 {
-		payload = json.RawMessage(req.Body)
-	}
-
-	trimmedPath := strings.TrimPrefix(req.Path, "/v1/")
+func getRequestedService(reqURL string) (string, string, []*registry.Service, error) {
+	trimmedPath := strings.TrimPrefix(reqURL, "/v1/")
 	parts := strings.Split(trimmedPath, "/")
 	if len(parts) < 2 {
 		// can't work out service and method
-		return errors.NotFound("v1api", "")
+		return "", "", nil, errors.NotFound("v1api", "")
 	}
 
 	service := parts[0]
-
+	svcs, err := registry.GetService(service)
+	if err != nil {
+		if err == registry.ErrNotFound {
+			return "", "", nil, errors.NotFound("v1api", "No such API")
+		}
+		log.Errorf("Error looking up service %s", err)
+		return "", "", nil, errInternal
+	}
 	endpoint := ""
 	if len(parts) == 2 {
 		// /v1/helloworld/call -> helloworld Helloworld.Call
@@ -364,6 +368,68 @@ func (e *V1) Endpoint(ctx context.Context, req *pb.Request, rsp *pb.Response) er
 		endpoint = fmt.Sprintf("%s.%s", strings.Title(parts[1]), strings.Title(parts[2]))
 	}
 
+	return service, endpoint, svcs, nil
+}
+
+func parseContentType(ct string) string {
+	if idx := strings.IndexRune(ct, ';'); idx >= 0 {
+		ct = ct[:idx]
+	}
+	if len(ct) == 0 {
+		ct = "application/json"
+	}
+	return ct
+}
+
+// Endpoint is a catch all for endpoints
+func (e *V1) Endpoint(ctx context.Context, stream server.Stream) (retErr error) {
+	// check api key
+	defer stream.Close()
+
+	md, ok := metadata.FromContext(ctx)
+	if !ok {
+		return errUnauthorized
+	}
+
+	key, apiRec, err := loadAPIRec(md["Authorization"])
+	if err != nil {
+		return err
+	}
+
+	reqURL, ok := md.Get("url")
+	if !ok {
+		log.Errorf("Requested URL not found")
+		return errInternal
+	}
+
+	if err := verifyCallAllowed(apiRec, reqURL); err != nil {
+		return err
+	}
+
+	if err := refreshToken(apiRec, key); err != nil {
+		return err
+	}
+	// set the auth
+	ctx = metadata.Set(ctx, "Authorization", fmt.Sprintf("Bearer %s", apiRec.Token))
+
+	// assume application/json for now
+	ct := "application/json"
+	service, endpoint, svcs, err := getRequestedService(reqURL)
+	if err != nil {
+		return err
+	}
+
+	if isStream(endpoint, svcs) {
+		return serveStream(ctx, stream, service, endpoint, svcs, apiRec)
+	}
+
+	// forward the request
+	var payload json.RawMessage
+	if err := stream.Recv(&payload); err != nil {
+		log.Errorf("Error receiving from stream %s", err)
+		return errInternal
+	}
+
 	request := client.DefaultClient.NewRequest(
 		service,
 		endpoint,
@@ -371,34 +437,29 @@ func (e *V1) Endpoint(ctx context.Context, req *pb.Request, rsp *pb.Response) er
 		client.WithContentType(ct),
 	)
 
-	// set the auth
-	ctx = metadata.Set(ctx, "Authorization", fmt.Sprintf("Bearer %s", apiRec.Token))
-
 	// create request/response
 	var response json.RawMessage
 	// make the call
 	if err := client.Call(ctx, request, &response); err != nil {
 		return err
 	}
+	publishEndpointEvent(reqURL, apiRec)
+
+	stream.Send(response)
+	return nil
+
+}
+
+func publishEndpointEvent(reqURL string, apiRec *apiKeyRecord) {
 	if err := events.Publish("v1api", v1api.Event{Type: "Request",
 		Request: &v1api.RequestEvent{
 			UserId:    apiRec.UserID,
 			Namespace: apiRec.Namespace,
 			ApiKeyId:  apiRec.ID,
-			Url:       req.Url,
+			Url:       reqURL,
 		}}); err != nil {
 		log.Errorf("Error publishing event %s", err)
 	}
-
-	// marshal response
-	// TODO implement errors
-	b, err := response.MarshalJSON()
-	if err != nil {
-		return err
-	}
-	rsp.Body = string(b)
-	return nil
-
 }
 
 // ListKeys lists all keys for a user
