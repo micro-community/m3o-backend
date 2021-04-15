@@ -8,6 +8,7 @@ import (
 	proto "github.com/m3o/services/explore/proto/explore"
 	"github.com/micro/micro/v3/service/auth"
 	"github.com/micro/micro/v3/service/errors"
+	"github.com/micro/micro/v3/service/logger"
 	"github.com/micro/micro/v3/service/model"
 	"github.com/micro/micro/v3/service/registry"
 	regutil "github.com/micro/micro/v3/service/registry/util"
@@ -22,7 +23,7 @@ type Explore struct {
 func NewExploreHandler(reg registry.Registry) *Explore {
 	m := model.NewModel(
 		model.WithKey("ServiceName"),
-		model.WithNamespace("meta"),
+		//model.WithNamespace("meta"),
 	)
 	m.Register(proto.SaveMetaRequest{})
 
@@ -56,6 +57,7 @@ func (e *Explore) Search(ctx context.Context, req *proto.SearchRequest, rsp *pro
 	if err != nil {
 		return err
 	}
+	logger.Infof("Found %v metas", len(metas))
 
 	for _, service := range services {
 		meta := &proto.SaveMetaRequest{}
