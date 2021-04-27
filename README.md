@@ -37,7 +37,7 @@ a further convention as follows:
 
 ```
 user/
-    api/	# api routes
+    api/	# api spec
     web/	# web html
     client/	# generated clients
     service/	# core service types
