@@ -1,10 +1,11 @@
-# Services
+# Backend
 
-This is the home of the Micro Services Platform aka (M3O).
+This is the backend for the M3O Platform.
 
 ## Overview
 
-This repository serves as the home for the M3O platform and related services. Those invited to develop the platform will be added to the team and have the ability to create and modify services here. We'll build additional value add services here to be consumed by users of the platform.
+This repository serves as the backend for the M3O platform and related services. These are services which power Micro as a Service and enable us 
+to offer Micro Cloud. This includes things like customer management, billing, etc.
 
 ## Dependencies
 
