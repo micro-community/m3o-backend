@@ -16,6 +16,9 @@ import (
 	"github.com/micro/micro/v3/service/events"
 	log "github.com/micro/micro/v3/service/logger"
 	"github.com/micro/micro/v3/service/store"
+	"github.com/stripe/stripe-go/v71/paymentintent"
+	"github.com/stripe/stripe-go/v71/paymentmethod"
+	"github.com/stripe/stripe-go/v71/setupintent"
 
 	"github.com/stripe/stripe-go/v71"
 	"github.com/stripe/stripe-go/v71/checkout/session"
@@ -74,6 +77,8 @@ func (s *Stripe) Webhook(ctx context.Context, ev *stripe.Event, rsp *api.Respons
 		return s.customerCreated(ctx, ev)
 	case "charge.succeeded":
 		return s.chargeSucceeded(ctx, ev)
+	case "checkout.session.completed":
+		return s.checkoutSessionCompleted(ctx, ev)
 	default:
 		log.Infof("Discarding event %s:%s", ev.ID, ev.Type)
 	}
@@ -155,6 +160,23 @@ func (s *Stripe) chargeSucceeded(ctx context.Context, event *stripe.Event) error
 	return nil
 }
 
+func (s *Stripe) checkoutSessionCompleted(ctx context.Context, event *stripe.Event) error {
+	//
+	var ch stripe.CheckoutSession
+	if err := json.Unmarshal(event.Data.Raw, &ch); err != nil {
+		log.Errorf("Error unmarshalling event %s", err)
+		return err
+	}
+	intent, err := setupintent.Get(ch.SetupIntent.ID, nil)
+	if err != nil {
+		log.Errorf("Error looking up setup intent %s %s", ch.SetupIntent.ID, err)
+		return err
+	}
+	// if no existing customer create customer and attach
+	log.Infof("Intent %+v", intent)
+	return nil
+}
+
 func verifyAdmin(ctx context.Context, method string) error {
 	acc, ok := auth.AccountFromContext(ctx)
 	if !ok {
@@ -176,7 +198,7 @@ func (s *Stripe) CreateCheckoutSession(ctx context.Context, request *stripepb.Cr
 	if !ok {
 		return errors.Unauthorized("stripe.CreateCheckoutSession", "Unauthorized")
 	}
-	if request.Amount < 500 { // min spend
+	if !request.SaveCard && request.Amount < 500 { // min spend
 		return errors.BadRequest("stripe.CreateCheckoutSession", "Amount must be at least 500")
 	}
 
@@ -184,8 +206,16 @@ func (s *Stripe) CreateCheckoutSession(ctx context.Context, request *stripepb.Cr
 		PaymentMethodTypes: stripe.StringSlice([]string{
 			"card",
 		}),
-		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
-		LineItems: []*stripe.CheckoutSessionLineItemParams{
+		SuccessURL: stripe.String(s.successURL),
+		CancelURL:  stripe.String(s.cancelURL),
+	}
+
+	if request.SaveCard {
+		params.Mode = stripe.String(string(stripe.CheckoutSessionModeSetup))
+
+	} else {
+		params.Mode = stripe.String(string(stripe.CheckoutSessionModeSetup))
+		params.LineItems = []*stripe.CheckoutSessionLineItemParams{
 			{
 				PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
 					Currency: stripe.String("usd"),
@@ -195,10 +225,7 @@ func (s *Stripe) CreateCheckoutSession(ctx context.Context, request *stripepb.Cr
 					UnitAmount: stripe.Int64(request.Amount),
 				},
 				Quantity: stripe.Int64(1),
-			},
-		},
-		SuccessURL: stripe.String(s.successURL),
-		CancelURL:  stripe.String(s.cancelURL),
+			}}
 	}
 
 	// lookup customer
@@ -224,5 +251,105 @@ func (s *Stripe) CreateCheckoutSession(ctx context.Context, request *stripepb.Cr
 	}
 
 	response.Id = session.ID
+	return nil
+}
+
+func (s *Stripe) ListCards(ctx context.Context, request *stripepb.ListCardsRequest, response *stripepb.ListCardsResponse) error {
+	acc, ok := auth.AccountFromContext(ctx)
+	if !ok {
+		return errors.Unauthorized("stripe.ListCards", "Unauthorized")
+	}
+	recs, err := store.Read(fmt.Sprintf(prefixM3OID, acc.ID))
+	if err != nil && err != store.ErrNotFound {
+		log.Errorf("Error looking up stripe customer")
+		return err
+	}
+	if len(recs) == 0 {
+		return nil
+	}
+	var cm CustomerMapping
+	json.Unmarshal(recs[0].Value, &cm)
+	iter := paymentmethod.List(&stripe.PaymentMethodListParams{
+		Customer: stripe.String(cm.StripeID),
+		Type:     stripe.String(string(stripe.PaymentMethodTypeCard)),
+	})
+
+	response.Cards = []*stripepb.Card{}
+	for iter.Next() {
+		pm := iter.PaymentMethod()
+		response.Cards = append(response.Cards, &stripepb.Card{
+			Id:       pm.ID,
+			LastFour: pm.Card.Last4,
+		})
+	}
+	if iter.Err() != nil {
+		return iter.Err()
+	}
+	return nil
+
+}
+
+func (s *Stripe) ChargeCard(ctx context.Context, request *stripepb.ChargeCardRequest, response *stripepb.ChargeCardResponse) error {
+	acc, ok := auth.AccountFromContext(ctx)
+	if !ok {
+		return errors.Unauthorized("stripe.ChargeCard", "Unauthorized")
+	}
+	recs, err := store.Read(fmt.Sprintf(prefixM3OID, acc.ID))
+	if err != nil && err != store.ErrNotFound {
+		log.Errorf("Error looking up stripe customer")
+		return err
+	}
+	if len(recs) == 0 {
+		return nil
+	}
+	var cm CustomerMapping
+	json.Unmarshal(recs[0].Value, &cm)
+
+	intent, err := paymentintent.New(&stripe.PaymentIntentParams{
+		Params:        stripe.Params{},
+		Amount:        stripe.Int64(request.Amount),
+		Currency:      stripe.String(string(stripe.CurrencyUSD)),
+		Customer:      stripe.String(cm.StripeID),
+		Description:   stripe.String("M3O funds"),
+		PaymentMethod: stripe.String(request.Id),
+	})
+	if err != nil {
+		log.Errorf("Error setting up payment intent %s", err)
+		return err
+	}
+
+	intent, err = paymentintent.Confirm(intent.ID, nil)
+	if err != nil {
+		log.Errorf("Error confirming payment intent %s", err)
+		return err
+	}
+	if intent.Status != stripe.PaymentIntentStatusRequiresAction {
+		return nil
+	}
+	response.ClientSecret = intent.ClientSecret
+
+	return nil
+}
+
+func (s *Stripe) DeleteCard(ctx context.Context, request *stripepb.DeleteCardRequest, response *stripepb.DeleteCardResponse) error {
+	acc, ok := auth.AccountFromContext(ctx)
+	if !ok {
+		return errors.Unauthorized("stripe.ChargeCard", "Unauthorized")
+	}
+	recs, err := store.Read(fmt.Sprintf(prefixM3OID, acc.ID))
+	if err != nil && err != store.ErrNotFound {
+		log.Errorf("Error looking up stripe customer")
+		return err
+	}
+	if len(recs) == 0 {
+		return nil
+	}
+	var cm CustomerMapping
+	json.Unmarshal(recs[0].Value, &cm)
+
+	_, err = paymentmethod.Detach(request.Id, nil)
+	if err != nil {
+		return err
+	}
 	return nil
 }
