@@ -16,6 +16,7 @@ import (
 	"github.com/micro/micro/v3/service/events"
 	log "github.com/micro/micro/v3/service/logger"
 	"github.com/micro/micro/v3/service/store"
+	"github.com/stripe/stripe-go/v71/charge"
 	"github.com/stripe/stripe-go/v71/customer"
 	"github.com/stripe/stripe-go/v71/paymentintent"
 	"github.com/stripe/stripe-go/v71/paymentmethod"
@@ -303,6 +304,7 @@ func (s *Stripe) ListCards(ctx context.Context, request *stripepb.ListCardsReque
 		response.Cards = append(response.Cards, &stripepb.Card{
 			Id:       pm.ID,
 			LastFour: pm.Card.Last4,
+			Expires:  fmt.Sprintf("%02d/%d", pm.Card.ExpMonth, pm.Card.ExpYear),
 		})
 	}
 	if iter.Err() != nil {
@@ -313,20 +315,14 @@ func (s *Stripe) ListCards(ctx context.Context, request *stripepb.ListCardsReque
 }
 
 func (s *Stripe) ChargeCard(ctx context.Context, request *stripepb.ChargeCardRequest, response *stripepb.ChargeCardResponse) error {
-	acc, ok := auth.AccountFromContext(ctx)
-	if !ok {
-		return errors.Unauthorized("stripe.ChargeCard", "Unauthorized")
-	}
-	recs, err := store.Read(fmt.Sprintf(prefixM3OID, acc.ID))
-	if err != nil && err != store.ErrNotFound {
-		log.Errorf("Error looking up stripe customer")
+	cm, err := mappingForCustomer(ctx, "stripe.ChargeCard")
+	if err != nil {
 		return err
 	}
-	if len(recs) == 0 {
-		return nil
+
+	if err := s.ownsCard(cm, request.Id); err != nil {
+		return errors.Forbidden("stripe.ChargeCard", "Card does not belong to user")
 	}
-	var cm CustomerMapping
-	json.Unmarshal(recs[0].Value, &cm)
 
 	intent, err := paymentintent.New(&stripe.PaymentIntentParams{
 		Params:        stripe.Params{},
@@ -355,23 +351,71 @@ func (s *Stripe) ChargeCard(ctx context.Context, request *stripepb.ChargeCardReq
 }
 
 func (s *Stripe) DeleteCard(ctx context.Context, request *stripepb.DeleteCardRequest, response *stripepb.DeleteCardResponse) error {
-	acc, ok := auth.AccountFromContext(ctx)
-	if !ok {
-		return errors.Unauthorized("stripe.ChargeCard", "Unauthorized")
-	}
-	recs, err := store.Read(fmt.Sprintf(prefixM3OID, acc.ID))
-	if err != nil && err != store.ErrNotFound {
-		log.Errorf("Error looking up stripe customer")
+	cm, err := mappingForCustomer(ctx, "stripe.DeleteCard")
+	if err != nil {
 		return err
 	}
-	if len(recs) == 0 {
-		return nil
+	if err := s.ownsCard(cm, request.Id); err != nil {
+		return errors.Forbidden("stripe.DeleteCard", "Card does not belong to user")
 	}
-	var cm CustomerMapping
-	json.Unmarshal(recs[0].Value, &cm)
 
 	_, err = paymentmethod.Detach(request.Id, nil)
 	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Stripe) ownsCard(cm *CustomerMapping, cardID string) error {
+	pm, err := paymentmethod.Get(cardID, nil)
+	if err != nil {
+		log.Errorf("Error loading payment method %s", err)
+		return err
+	}
+	if cm.StripeID != pm.Customer.ID {
+		log.Errorf("Card does not belong to this user %s. Card %s belongs to %s", cm.StripeID, cardID, pm.Customer.ID)
+		return fmt.Errorf("card does not belong to user")
+	}
+	return nil
+}
+
+// mappingForCustomer returns the customer mapping for this context
+func mappingForCustomer(ctx context.Context, method string) (*CustomerMapping, error) {
+	acc, ok := auth.AccountFromContext(ctx)
+	if !ok {
+		return nil, errors.Unauthorized(method, "Unauthorized")
+	}
+	recs, err := store.Read(fmt.Sprintf(prefixM3OID, acc.ID))
+	if err != nil {
+		log.Errorf("Error looking up stripe customer %s", err)
+		return nil, err
+	}
+
+	var cm CustomerMapping
+	json.Unmarshal(recs[0].Value, &cm)
+	return &cm, nil
+}
+
+func (s *Stripe) ListPayments(ctx context.Context, request *stripepb.ListPaymentsRequest, response *stripepb.ListPaymentsResponse) error {
+	cm, err := mappingForCustomer(ctx, "stripe.ListPayments")
+	if err != nil {
+		return err
+	}
+	iter := charge.List(&stripe.ChargeListParams{
+		Customer: stripe.String(cm.StripeID),
+	})
+	response.Payments = []*stripepb.Payment{}
+	for iter.Next() {
+		c := iter.Charge()
+		response.Payments = append(response.Payments, &stripepb.Payment{
+			Id:         c.ID,
+			Amount:     c.Amount,
+			Currency:   string(c.Currency),
+			Date:       c.Created,
+			ReceiptUrl: c.ReceiptURL,
+		})
+	}
+	if err := iter.Err(); err != nil {
 		return err
 	}
 	return nil
