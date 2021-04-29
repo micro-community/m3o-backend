@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 
 	proto "github.com/m3o/services/explore/proto/explore"
@@ -83,20 +82,22 @@ func (e *Explore) Search(ctx context.Context, req *proto.SearchRequest, rsp *pro
 			})
 			continue
 		}
+		found := false
 		for _, ep := range service.Endpoints {
-			if strings.Contains(ep.Name, req.SearchTerm) {
+			if strings.Contains(strings.ToLower(ep.Name), req.SearchTerm) {
 				matchedEndpointName = append(matchedEndpointName, &proto.Service{
 					Service:     regutil.ToProto(service),
 					Readme:      meta.Readme,
 					OpenAPIJSON: meta.OpenAPIJSON,
 				})
-				continue
+				found = true
+				break
 			}
 		}
-		js, _ := json.Marshal(service)
-		if strings.Contains(string(js), req.SearchTerm) ||
-			strings.Contains(meta.OpenAPIJSON, req.SearchTerm) ||
-			strings.Contains(meta.Readme, req.SearchTerm) {
+		if found {
+			continue
+		}
+		if strings.Contains(meta.Readme, req.SearchTerm) {
 			matchedOther = append(matchedOther, &proto.Service{
 				Service:     regutil.ToProto(service),
 				Readme:      meta.Readme,
