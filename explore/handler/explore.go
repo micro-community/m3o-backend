@@ -69,13 +69,21 @@ func (e *Explore) Index(ctx context.Context, req *proto.IndexRequest, rsp *proto
 		e.cache = resp.Services
 		e.lastUpdated = time.Now()
 
-		// set and return the response
-		rsp.Services = resp.Services
-		return nil
+		// update cache val
+		cache = resp.Services
+	}
+
+	// check the limit
+	limit := int(req.Limit)
+	if limit <= 0 || limit > len(cache) {
+		limit = len(cache)
 	}
 
 	// otherwise use the cache
-	rsp.Services = cache
+	for i := 0; i < limit; i++ {
+		// set and return the response
+		rsp.Services = append(rsp.Services, cache[i])
+	}
 
 	return nil
 
