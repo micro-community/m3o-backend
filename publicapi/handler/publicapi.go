@@ -43,9 +43,27 @@ func (p *Publicapi) Publish(ctx context.Context, request *pb.PublishRequest, res
 	if _, err := m3oauth.VerifyMicroAdmin(ctx, "publicapi.Publish"); err != nil {
 		return err
 	}
+	if request.Api == nil || len(request.Api.Name) == 0 {
+		return errors.BadRequest("publicapi.Publish", "Missing API name")
+	}
+	id := uuid.New().String()
+	// for now api name is also unique
+	recs, err := store.Read(fmt.Sprintf(prefixName, request.Api.Name))
+	if err != nil && err != store.ErrNotFound {
+		return err
+	}
+	if len(recs) > 0 {
+		// update the existing
+		var ae APIEntry
+		if err := json.Unmarshal(recs[0].Value, &ae); err != nil {
+			return err
+		}
+		id = ae.ID
+	}
+
 	acc, _ := auth.AccountFromContext(ctx)
 	ae := &APIEntry{
-		ID:           uuid.New().String(),
+		ID:           id,
 		Name:         request.Api.Name,
 		Description:  request.Api.Description,
 		OpenAPIJSON:  request.Api.OpenApiJson,
