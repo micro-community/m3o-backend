@@ -23,6 +23,7 @@ func main() {
 					Name:    "Stripe.Webhook",
 					Handler: "api",
 					Method:  []string{"POST"},
+					Path:    []string{"/stripe/webhook"},
 				}),
 		))
 
