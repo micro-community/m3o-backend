@@ -13,6 +13,10 @@ import (
 	"github.com/micro/micro/v3/service/logger"
 )
 
+const (
+	msgInsufficientFunds = "Insufficient funds"
+)
+
 func (b *Balance) consumeEvents() {
 	processTopic := func(topic string, handler func(ch <-chan mevents.Event)) {
 		var evs <-chan mevents.Event
@@ -78,7 +82,14 @@ func (b *Balance) processAPIKeyCreated(ac *v1api.APIKeyCreateEvent) error {
 
 	// Keys start in blocked status, so unblock if they have the cash
 	if currBal <= 0 {
-		logger.Infof("User balance is 0 for %s:%s, skipping", ac.Namespace, ac.UserId)
+		if _, err := b.v1Svc.BlockKey(context.Background(), &v1api.BlockKeyRequest{
+			UserId:    ac.UserId,
+			Namespace: ac.Namespace,
+			Message:   msgInsufficientFunds,
+		}, client.WithAuthToken()); err != nil {
+			logger.Errorf("Error blocking key %s", err)
+			return err
+		}
 		return nil
 	}
 	if _, err := b.v1Svc.UnblockKey(context.Background(), &v1api.UnblockKeyRequest{
@@ -120,6 +131,7 @@ func (b *Balance) processRequest(rqe *v1api.RequestEvent) error {
 	if _, err := b.v1Svc.BlockKey(context.TODO(), &v1api.BlockKeyRequest{
 		UserId:    rqe.UserId,
 		Namespace: rqe.Namespace,
+		Message:   msgInsufficientFunds,
 	}, client.WithAuthToken()); err != nil {
 		// TODO if we fail here we might double count because the message will be retried
 		logger.Errorf("Error blocking key %s", err)
@@ -166,12 +178,13 @@ func (b *Balance) processChargeSucceeded(ev *stripepb.ChargeSuceededEvent) error
 	if err != nil {
 		logger.Errorf("Error incrementing balance %s", err)
 	}
-	namespace := "micro"
 
 	// For now, builders have accounts issued by non micro namespace
 	rsp, err := b.nsSvc.List(context.Background(), &ns.ListRequest{
 		Owner: ev.CustomerId,
 	})
+
+	namespace := microNamespace
 	if err == nil {
 		// TODO at some point builders will actually have accounts issued from micro namespace
 		namespace = rsp.Namespaces[0].Id

@@ -17,11 +17,13 @@ import (
 	"github.com/micro/micro/v3/service/client"
 	"github.com/micro/micro/v3/service/config"
 	"github.com/micro/micro/v3/service/errors"
+	"github.com/micro/micro/v3/service/logger"
 	log "github.com/micro/micro/v3/service/logger"
 )
 
 const (
-	prefixCounter = "balance-service/counter"
+	prefixCounter  = "balance-service/counter"
+	microNamespace = "micro"
 )
 
 type counter struct {
@@ -59,7 +61,6 @@ type publicAPICache struct {
 
 func (p *publicAPICache) get(name string) (*publicapi.PublicAPI, error) {
 	// check the cache
-	// TODO mutex
 	p.RLock()
 	cached := p.cache[name]
 	p.RUnlock()
@@ -133,6 +134,19 @@ func (b Balance) Increment(ctx context.Context, request *balance.IncrementReques
 		return err
 	}
 	response.NewBalance = currBal
+
+	if currBal < 0 {
+		return nil
+	}
+
+	if _, err := b.v1Svc.UnblockKey(context.Background(), &v1api.UnblockKeyRequest{
+		UserId:    request.CustomerId,
+		Namespace: microNamespace,
+	}, client.WithAuthToken()); err != nil {
+		logger.Errorf("Error unblocking key %s", err)
+		return err
+	}
+
 	return nil
 }
 
@@ -146,7 +160,20 @@ func (b Balance) Decrement(ctx context.Context, request *balance.DecrementReques
 	if err != nil {
 		return err
 	}
+
 	response.NewBalance = currBal
+	if currBal > 0 {
+		return nil
+	}
+	if _, err := b.v1Svc.BlockKey(context.Background(), &v1api.BlockKeyRequest{
+		UserId:    request.CustomerId,
+		Namespace: microNamespace,
+		Message:   msgInsufficientFunds,
+	}, client.WithAuthToken()); err != nil {
+		logger.Errorf("Error blocking key %s", err)
+		return err
+	}
+
 	return nil
 }
 
