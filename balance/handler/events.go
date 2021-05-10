@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	ns "github.com/m3o/services/namespaces/proto"
@@ -26,7 +27,7 @@ func (b *Balance) consumeEvents() {
 			evs, err = mevents.Consume(topic,
 				mevents.WithAutoAck(false, 30*time.Second),
 				mevents.WithRetryLimit(10),
-				mevents.WithGroup("balance")) // 10 retries * 30 secs ackWait gives us 5 mins of tolerance for issues
+				mevents.WithGroup(fmt.Sprintf("%s-%s", "balance", topic))) // 10 retries * 30 secs ackWait gives us 5 mins of tolerance for issues
 			if err == nil {
 				handler(evs)
 				start = time.Now()
@@ -145,6 +146,7 @@ func (b *Balance) processStripeEvents(ch <-chan mevents.Event) {
 	logger.Infof("Starting to process stripe events")
 	for ev := range ch {
 		ve := &stripepb.Event{}
+		logger.Infof("Processing event %+v", ev)
 		if err := json.Unmarshal(ev.Payload, ve); err != nil {
 			ev.Nack()
 			logger.Errorf("Error unmarshalling stripe event: $s", err)
@@ -167,7 +169,6 @@ func (b *Balance) processStripeEvents(ch <-chan mevents.Event) {
 
 func (b *Balance) processChargeSucceeded(ev *stripepb.ChargeSuceededEvent) error {
 	// TODO if we return error and we have already incremented the counter then we double count so make this idempotent
-
 	// safety first
 	if ev.Ammount == 0 {
 		return nil
@@ -177,6 +178,18 @@ func (b *Balance) processChargeSucceeded(ev *stripepb.ChargeSuceededEvent) error
 	_, err := b.c.incr(ev.CustomerId, "$balance$", ev.Ammount*100)
 	if err != nil {
 		logger.Errorf("Error incrementing balance %s", err)
+	}
+
+	srsp, err := b.stripeSvc.GetPayment(context.Background(), &stripepb.GetPaymentRequest{Id: ev.ChargeId}, client.WithAuthToken())
+	if err != nil {
+		return err
+	}
+
+	err = storeAdjustment(ev.CustomerId, ev.Ammount*100, ev.CustomerId, "Funds added", true, map[string]string{
+		"receipt_url": srsp.Payment.ReceiptUrl,
+	})
+	if err != nil {
+		return err
 	}
 
 	// For now, builders have accounts issued by non micro namespace
@@ -199,6 +212,5 @@ func (b *Balance) processChargeSucceeded(ev *stripepb.ChargeSuceededEvent) error
 		logger.Errorf("Error unblocking key %s", err)
 		return err
 	}
-
 	return nil
 }
