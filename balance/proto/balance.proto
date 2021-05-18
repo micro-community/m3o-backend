@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package balance;
+
+option go_package = "./proto;balance";
+
+service Balance {
+	rpc Increment(IncrementRequest) returns (IncrementResponse) {}
+	rpc Decrement(DecrementRequest) returns (DecrementResponse) {}
+	rpc Current(CurrentRequest) returns (CurrentResponse) {}
+	rpc ListAdjustments(ListAdjustmentsRequest) returns (ListAdjustmentsResponse) {}
+}
+
+message IncrementRequest {
+	string customer_id = 1;
+	int64 delta = 2;
+	string idempotency_key = 3;
+	bool visible = 4;
+	string reference = 5;
+}
+
+message IncrementResponse {
+	int64 new_balance = 1;
+}
+
+message DecrementRequest {
+	string customer_id = 1;
+	int64 delta = 2;
+	string idempotency_key = 3;
+	bool visible = 4;
+	string reference = 5;
+}
+
+message DecrementResponse {
+	int64 new_balance = 1;
+}
+
+message CurrentRequest {
+	string customer_id = 1;
+}
+
+message CurrentResponse {
+	int64 current_balance = 1;
+}
+
+message ListAdjustmentsRequest {
+	string customer_id = 1;
+}
+
+message Adjustment {
+	string id = 1;
+	int64 created = 2;
+	int64 delta = 3;
+	string reference = 4;
+	map<string,string> meta = 5;
+}
+
+message ListAdjustmentsResponse {
+	repeated Adjustment adjustments = 1;
+}
+
