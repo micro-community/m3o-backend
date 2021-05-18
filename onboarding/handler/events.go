@@ -72,7 +72,7 @@ func (o *Onboarding) consumeEvents() {
 func (o *Onboarding) processOnboardingEvents(ch <-chan mevents.Event) {
 	logger.Infof("Starting to process onboarding events")
 	for {
-		t := time.NewTimer(2 * time.Minute)
+		t := time.NewTimer(600 * time.Minute)
 		var ev mevents.Event
 		select {
 		case ev = <-ch:

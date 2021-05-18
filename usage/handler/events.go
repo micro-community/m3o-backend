@@ -39,7 +39,7 @@ func (p *UsageSvc) consumeEvents() {
 func (p *UsageSvc) processV1apiEvents(ch <-chan mevents.Event) {
 	logger.Infof("Starting to process v1api events")
 	for {
-		t := time.NewTimer(2 * time.Minute)
+		t := time.NewTimer(600 * time.Minute)
 		var ev mevents.Event
 		select {
 		case ev = <-ch:

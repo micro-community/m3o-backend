@@ -48,7 +48,7 @@ func (b *Balance) consumeEvents() {
 func (b *Balance) processV1apiEvents(ch <-chan mevents.Event) {
 	logger.Infof("Starting to process v1api events")
 	for {
-		t := time.NewTimer(2 * time.Minute)
+		t := time.NewTimer(600 * time.Minute)
 		var ev mevents.Event
 		select {
 		case ev = <-ch:
@@ -161,7 +161,7 @@ func (b *Balance) processRequest(rqe *v1api.RequestEvent) error {
 func (b *Balance) processStripeEvents(ch <-chan mevents.Event) {
 	logger.Infof("Starting to process stripe events")
 	for {
-		t := time.NewTimer(2 * time.Minute)
+		t := time.NewTimer(600 * time.Minute)
 		var ev mevents.Event
 		select {
 		case ev = <-ch:
