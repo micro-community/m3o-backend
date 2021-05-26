@@ -10,6 +10,7 @@ import (
 	stripepb "github.com/m3o/services/stripe/proto"
 	v1api "github.com/m3o/services/v1api/proto"
 	"github.com/micro/micro/v3/service/client"
+	"github.com/micro/micro/v3/service/errors"
 	mevents "github.com/micro/micro/v3/service/events"
 	"github.com/micro/micro/v3/service/logger"
 )
@@ -104,6 +105,9 @@ func (b *Balance) processAPIKeyCreated(ac *v1api.APIKeyCreateEvent) error {
 			Namespace: ac.Namespace,
 			Message:   msgInsufficientFunds,
 		}, client.WithAuthToken()); err != nil {
+			if merr, ok := err.(*errors.Error); ok && merr.Code == 404 {
+				return nil
+			}
 			logger.Errorf("Error blocking key %s", err)
 			return err
 		}
@@ -114,6 +118,9 @@ func (b *Balance) processAPIKeyCreated(ac *v1api.APIKeyCreateEvent) error {
 		Namespace: ac.Namespace,
 		KeyId:     ac.ApiKeyId,
 	}, client.WithAuthToken()); err != nil {
+		if merr, ok := err.(*errors.Error); ok && merr.Code == 404 {
+			return nil
+		}
 		logger.Errorf("Error unblocking key %s", err)
 		return err
 	}
@@ -151,6 +158,9 @@ func (b *Balance) processRequest(rqe *v1api.RequestEvent) error {
 		Message:   msgInsufficientFunds,
 	}, client.WithAuthToken()); err != nil {
 		// TODO if we fail here we might double count because the message will be retried
+		if merr, ok := err.(*errors.Error); ok && merr.Code == 404 {
+			return nil
+		}
 		logger.Errorf("Error blocking key %s", err)
 		return err
 	}
@@ -202,7 +212,7 @@ func (b *Balance) processStripeEvents(ch <-chan mevents.Event) {
 func (b *Balance) processChargeSucceeded(ev *stripepb.ChargeSuceededEvent) error {
 	// TODO if we return error and we have already incremented the counter then we double count so make this idempotent
 	// safety first
-	if ev.Amount == 0 {
+	if ev == nil || ev.Amount == 0 {
 		return nil
 	}
 	// add to balance
