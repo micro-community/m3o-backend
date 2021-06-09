@@ -321,6 +321,9 @@ func (e *Endtoend) signup() error {
 		return fmt.Errorf("error generating key, failed to unmarshal response %s", err)
 	}
 
+	// sleep to allow the api key to be enabled - async processing bla bla bla
+	time.Sleep(10 * time.Second)
+
 	// run some apis
 	pubrsp, err := e.pubSvc.List(context.Background(), &pubpb.ListRequest{}, client.WithAuthToken())
 	if err != nil {
