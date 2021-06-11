@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/m3o/services/pkg/tracing"
 	"github.com/m3o/services/v1api/handler"
 	"github.com/micro/micro/v3/service"
 	"github.com/micro/micro/v3/service/api"
@@ -63,6 +64,9 @@ func main() {
 		logger.Infof("Setting up cached registry for %s", regName)
 		registry.DefaultRegistry = cache.New(registry.DefaultRegistry)
 	}
+
+	traceCloser := tracing.SetupOpentracing("v1api")
+	defer traceCloser.Close()
 
 	// Run service
 	if err := srv.Run(); err != nil {
