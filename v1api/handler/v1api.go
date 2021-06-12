@@ -24,6 +24,7 @@ import (
 	"github.com/micro/micro/v3/service/events"
 	log "github.com/micro/micro/v3/service/logger"
 	"github.com/micro/micro/v3/service/registry"
+	"github.com/micro/micro/v3/service/registry/cache"
 	"github.com/micro/micro/v3/service/server"
 	"github.com/micro/micro/v3/service/store"
 )
@@ -31,6 +32,7 @@ import (
 type V1 struct {
 	papi        publicapi.PublicapiService
 	keyRecCache *lru.Cache
+	registry registry.Registry
 }
 
 const (
@@ -52,6 +54,7 @@ func NewHandler(srv *service.Service) *V1 {
 	return &V1{
 		papi:        publicapi.NewPublicapiService("publicapi", srv.Client()),
 		keyRecCache: keyRecCache,
+		registry: cache.New(registry.DefaultRegistry),
 	}
 }
 
@@ -251,7 +254,7 @@ func (v1 *V1) refreshToken(apiRec *apiKeyRecord, key string) error {
 	return nil
 }
 
-func getRequestedService(reqURL string) (string, string, []*registry.Service, error) {
+func (v1 *V1) getRequestedService(reqURL string) (string, string, []*registry.Service, error) {
 	trimmedPath := strings.TrimPrefix(reqURL, "/v1/")
 	parts := strings.Split(trimmedPath, "/")
 	if len(parts) < 2 {
@@ -260,7 +263,7 @@ func getRequestedService(reqURL string) (string, string, []*registry.Service, er
 	}
 
 	service := parts[0]
-	svcs, err := registry.GetService(service)
+	svcs, err := v1.registry.GetService(service)
 	if err != nil {
 		if err == registry.ErrNotFound {
 			return "", "", nil, errors.NotFound("v1api", "No such API")
@@ -330,7 +333,7 @@ func (v1 *V1) Endpoint(ctx context.Context, stream server.Stream) (retErr error)
 
 	// assume application/json for now
 	ct := "application/json"
-	service, endpoint, svcs, err := getRequestedService(reqURL)
+	service, endpoint, svcs, err := v1.getRequestedService(reqURL)
 	if err != nil {
 		return err
 	}
