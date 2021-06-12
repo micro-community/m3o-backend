@@ -32,7 +32,6 @@ import (
 type V1 struct {
 	papi        publicapi.PublicapiService
 	keyRecCache *lru.Cache
-	registry registry.Registry
 }
 
 const (
@@ -263,7 +262,7 @@ func (v1 *V1) getRequestedService(reqURL string) (string, string, []*registry.Se
 	}
 
 	service := parts[0]
-	svcs, err := v1.registry.GetService(service)
+	svcs, err := registry.GetService(service)
 	if err != nil {
 		if err == registry.ErrNotFound {
 			return "", "", nil, errors.NotFound("v1api", "No such API")
