@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	m3oauth "github.com/m3o/services/pkg/auth"
 	pb "github.com/m3o/services/usage/proto"
 	"github.com/micro/micro/v3/service"
 	"github.com/micro/micro/v3/service/auth"
@@ -31,9 +32,8 @@ type counter struct {
 	redisClient *redis.Client
 }
 
-func (c *counter) incr(userID, path string, delta int64, t time.Time) (int64, error) {
+func (c *counter) incr(ctx context.Context, userID, path string, delta int64, t time.Time) (int64, error) {
 	t = t.UTC()
-	ctx := context.Background()
 	key := fmt.Sprintf("%s:%s:%s:%s", prefixCounter, userID, t.Format("20060102"), path)
 	pipe := c.redisClient.TxPipeline()
 	incr := pipe.IncrBy(ctx, key, delta)
@@ -45,9 +45,8 @@ func (c *counter) incr(userID, path string, delta int64, t time.Time) (int64, er
 	return incr.Result()
 }
 
-func (c *counter) decr(userID, path string, delta int64, t time.Time) (int64, error) {
+func (c *counter) decr(ctx context.Context, userID, path string, delta int64, t time.Time) (int64, error) {
 	t = t.UTC()
-	ctx := context.Background()
 	key := fmt.Sprintf("%s:%s:%s:%s", prefixCounter, userID, t.Format("20060102"), path)
 	pipe := c.redisClient.TxPipeline()
 	decr := pipe.DecrBy(ctx, key, delta)
@@ -59,13 +58,31 @@ func (c *counter) decr(userID, path string, delta int64, t time.Time) (int64, er
 	return decr.Result()
 }
 
-func (c *counter) read(userID, path string, t time.Time) (int64, error) {
+func (c *counter) read(ctx context.Context, userID, path string, t time.Time) (int64, error) {
 	t = t.UTC()
-	ret, err := c.redisClient.Get(context.Background(), fmt.Sprintf("%s:%s:%s:%s", prefixCounter, userID, t.Format("20060102"), path)).Int64()
+	ret, err := c.redisClient.Get(ctx, fmt.Sprintf("%s:%s:%s:%s", prefixCounter, userID, t.Format("20060102"), path)).Int64()
 	if err == redis.Nil {
 		return 0, nil
 	}
 	return ret, err
+}
+
+func (c *counter) deleteUser(ctx context.Context, userID string) error {
+	keys, err := c.redisClient.Keys(ctx, fmt.Sprintf("%s:%s:*", prefixCounter, userID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil
+		}
+		return err
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	if err := c.redisClient.Del(ctx, keys...).Err(); err != nil && err != redis.Nil {
+		return err
+	}
+
+	return nil
 }
 
 type listEntry struct {
@@ -143,7 +160,7 @@ func (p *UsageSvc) Read(ctx context.Context, request *pb.ReadRequest, response *
 		request.CustomerId = acc.ID
 	}
 	if acc.ID != request.CustomerId {
-		err := verifyMicroAdmin(ctx, "usage.Read")
+		_, err := m3oauth.VerifyMicroAdmin(ctx, "usage.Read")
 		if err != nil {
 			return err
 		}
@@ -221,27 +238,6 @@ func (p *UsageSvc) Read(ctx context.Context, request *pb.ReadRequest, response *
 		}
 		response.Usage[k].Records = append(v.Records[:lenRecs-2], v.Records[lenRecs-1])
 
-	}
-	return nil
-}
-
-func verifyMicroAdmin(ctx context.Context, method string) error {
-	acc, ok := auth.AccountFromContext(ctx)
-	if !ok {
-		return errors.Unauthorized(method, "Unauthorized")
-	}
-	if acc.Issuer != "micro" {
-		return errors.Forbidden(method, "Forbidden")
-	}
-	admin := false
-	for _, s := range acc.Scopes {
-		if s == "admin" || s == "service" {
-			admin = true
-			break
-		}
-	}
-	if !admin {
-		return errors.Forbidden(method, "Forbidden")
 	}
 	return nil
 }
@@ -325,5 +321,39 @@ func (p *UsageSvc) UsageCron() {
 
 func (p *UsageSvc) Sweep(ctx context.Context, request *pb.SweepRequest, response *pb.SweepResponse) error {
 	p.UsageCron()
+	return nil
+}
+
+func (p *UsageSvc) deleteUser(ctx context.Context, userID string) error {
+	if err := p.c.deleteUser(ctx, userID); err != nil {
+		return err
+	}
+
+	recs, err := store.Read(fmt.Sprintf("%s/%s/", prefixUsageByCustomer, userID), store.ReadPrefix())
+	if err != nil {
+		return err
+	}
+	for _, rec := range recs {
+		if err := store.Delete(rec.Key); err != nil {
+			return err
+		}
+	}
+	return nil
+
+}
+
+func (p *UsageSvc) DeleteCustomer(ctx context.Context, request *pb.DeleteCustomerRequest, response *pb.DeleteCustomerResponse) error {
+	if _, err := m3oauth.VerifyMicroAdmin(ctx, "usage.DeleteCustomer"); err != nil {
+		return err
+	}
+
+	if len(request.Id) == 0 {
+		return errors.BadRequest("usage.DeleteCustomer", "Error deleting customer")
+	}
+
+	if err := p.deleteUser(ctx, request.Id); err != nil {
+		log.Errorf("Error deleting customer %s", err)
+		return err
+	}
 	return nil
 }
