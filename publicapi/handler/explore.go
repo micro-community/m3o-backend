@@ -12,6 +12,8 @@ import (
 	"github.com/micro/micro/v3/service"
 	"github.com/micro/micro/v3/service/errors"
 	log "github.com/micro/micro/v3/service/logger"
+	logger "github.com/micro/micro/v3/service/logger"
+	model "github.com/micro/micro/v3/service/model"
 	"github.com/micro/micro/v3/service/registry"
 	"github.com/micro/micro/v3/service/store"
 )
@@ -21,6 +23,13 @@ type Explore struct {
 	apiCache    []*API
 	regCache    map[string]*registry.Service
 	lastUpdated time.Time
+	trackSearch model.Model
+}
+
+type SearchCount struct {
+	// search term itself
+	Id    string `json:"id"`
+	Count int64  `json:"count"`
 }
 
 // The API consisting of the public api def and the summary explore api info
@@ -48,7 +57,11 @@ func marshalExploreAPI(ae *APIEntry, svc *registry.Service) *pb.ExploreAPI {
 }
 
 func NewExploreAPIHandler(srv *service.Service) *Explore {
-	e := &Explore{}
+	e := &Explore{
+		trackSearch: model.New(SearchCount{}, &model.Options{
+			Key: "id",
+		}),
+	}
 	// start the cache
 	go e.runCache()
 	return e
@@ -159,8 +172,40 @@ func (e *Explore) exploreList() ([]*API, error) {
 	return e.loadCache()
 }
 
+func (e *Explore) recordSearch(searchTerm string) error {
+	searchTerm = strings.ToLower(searchTerm)
+	searchTerm = strings.Replace(searchTerm, " ", "-", -1)
+
+	if searchTerm == "" {
+		return fmt.Errorf("no search term to track")
+	}
+	oldTrack := []*SearchCount{}
+	err := e.trackSearch.Read(model.QueryEquals("id", searchTerm), &oldTrack)
+	if err != nil {
+		return err
+	}
+	if len(oldTrack) == 0 {
+		return e.trackSearch.Create(SearchCount{
+			Id:    searchTerm,
+			Count: 1,
+		})
+	}
+	tr := oldTrack[0]
+	tr.Count += 1
+	return e.trackSearch.Update(tr)
+}
+
 // Search returns APIs based on the given search term
 func (e *Explore) Search(ctx context.Context, request *pb.SearchRequest, response *pb.SearchResponse) error {
+	go func() {
+		if request.SearchTerm == "" {
+			return
+		}
+		err := e.recordSearch(request.SearchTerm)
+		if err != nil {
+			logger.Error(err)
+		}
+	}()
 	list, err := e.exploreList()
 	if err != nil {
 		return err
