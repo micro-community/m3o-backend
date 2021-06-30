@@ -34,13 +34,50 @@ import (
 type V1 struct {
 	papi        publicapi.PublicapiService
 	accsvc      authpb.AccountsService
-	keyRecCache *lru.Cache
+	keyRecCache *expiringLRUCache
+}
+
+type cacheValueWrapper struct {
+	value   interface{}
+	expires time.Time
+}
+
+// expiringLRUCache works much like the LRUCache but adds an expiry to each entry
+// implementation is naive and has many edge cases because we don't actively expire things but just check
+// on the `Get()` call. Good enough for our purposes until we implement a redis cache
+type expiringLRUCache struct {
+	*lru.Cache
+	ttl time.Duration
+}
+
+func (c *expiringLRUCache) Add(key, value interface{}) bool {
+	return c.Cache.Add(key, &cacheValueWrapper{value: value, expires: time.Now().Add(c.ttl)})
+}
+
+func (c *expiringLRUCache) Get(key interface{}) (interface{}, bool) {
+	val, ok := c.Cache.Get(key)
+	if !ok {
+		return nil, false
+	}
+	wrappedVal := val.(*cacheValueWrapper)
+	if wrappedVal.hasExpired() {
+		// We don't delete the entry here because we'd have to introduce locking (doing a get then delete)
+		//
+		return nil, false
+	}
+	return wrappedVal.value, true
+}
+
+func (c cacheValueWrapper) hasExpired() bool {
+	return time.Now().After(c.expires)
 }
 
 const (
 	storePrefixHashedKey = "hashed"
 	storePrefixUserID    = "user"
 	storePrefixKeyID     = "key"
+
+	lruCacheTTL = 5 * time.Minute
 )
 
 var (
@@ -49,14 +86,15 @@ var (
 )
 
 func NewHandler(srv *service.Service) *V1 {
-	keyRecCache, err := lru.New(10000) // TODO how big should this be?
+	c, err := lru.New(10000) // TODO how big should this be?
 	if err != nil {
 		log.Fatalf("Failed to create LRU cache %s", err)
 	}
+	keyRecCache := expiringLRUCache{Cache: c, ttl: lruCacheTTL}
 	v1 := &V1{
 		papi:        publicapi.NewPublicapiService("publicapi", srv.Client()),
 		accsvc:      authpb.NewAccountsService("auth", srv.Client()),
-		keyRecCache: keyRecCache,
+		keyRecCache: &keyRecCache,
 	}
 	go v1.consumeEvents()
 	return v1
@@ -92,7 +130,7 @@ func (v1 *V1) writeAPIRecord(rec *apiKeyRecord) error {
 		return err
 	}
 
-	v1.keyRecCache.Remove(rec.ApiKey)
+	v1.keyRecCache.Add(rec.ApiKey, rec)
 	return nil
 }
 

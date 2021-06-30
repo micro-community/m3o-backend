@@ -10,8 +10,8 @@ import (
 	"github.com/micro/micro/v3/service/logger"
 )
 
-func (v *V1) consumeEvents() {
-	go pevents.ProcessTopic("customers", "v1api", v.processCustomerEvents)
+func (v1 *V1) consumeEvents() {
+	go pevents.ProcessTopic("customers", "v1api", v1.processCustomerEvents)
 }
 
 func (v1 *V1) processCustomerEvents(ev mevents.Event) error {
