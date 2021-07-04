@@ -12,8 +12,8 @@ to offer Micro Cloud. This includes things like customer management, billing, et
 We depend on Micro using the "platform" profile. It runs on kubernetes with the resources below:
 
 - Etcd
-- NATS
-- CockroachDB
+- Redis
+- Postgres
 
 ## Design
 
