@@ -7,11 +7,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/micro/micro/v3/util/auth/namespace"
 
 	customer "github.com/m3o/services/customers/proto"
+	apiproto "github.com/micro/micro/v3/proto/api"
 	aproto "github.com/micro/micro/v3/proto/auth"
 	"github.com/micro/micro/v3/service"
 	"github.com/micro/micro/v3/service/auth"
+	mauth "github.com/micro/micro/v3/service/auth/client"
 	"github.com/micro/micro/v3/service/client"
 	"github.com/micro/micro/v3/service/errors"
 	mevents "github.com/micro/micro/v3/service/events"
@@ -21,6 +24,8 @@ import (
 
 type Customers struct {
 	accountsService aproto.AccountsService
+	apiService      apiproto.ApiService
+	auth            auth.Auth
 }
 
 const (
@@ -28,6 +33,7 @@ const (
 	statusVerified   = "verified"
 	statusActive     = "active"
 	statusDeleted    = "deleted"
+	statusBanned     = "banned"
 
 	prefixCustomer      = "customers/"
 	prefixCustomerEmail = "email/"
@@ -51,6 +57,8 @@ type CustomerModel struct {
 func New(service *service.Service) *Customers {
 	c := &Customers{
 		accountsService: aproto.NewAccountsService("auth", service.Client()),
+		apiService:      apiproto.NewApiService("api", service.Client()),
+		auth:            mauth.NewAuth(),
 	}
 	return c
 }
@@ -295,6 +303,23 @@ func authorizeCall(ctx context.Context, customerID string) error {
 	return errors.Unauthorized("customers", "Unauthorized request")
 }
 
+func authorizeAdmin(ctx context.Context) error {
+	account, ok := auth.AccountFromContext(ctx)
+	if !ok {
+		return errors.Unauthorized("customers", "Unauthorized request")
+	}
+	if account.Issuer != "micro" {
+		return errors.Unauthorized("customers", "Unauthorized request")
+	}
+	if account.Type == "user" && hasScope("admin", account.Scopes) {
+		return nil
+	}
+	if account.Type == "service" {
+		return nil
+	}
+	return errors.Unauthorized("customers", "Unauthorized request")
+}
+
 func hasScope(scope string, scopes []string) bool {
 	for _, sc := range scopes {
 		if sc == scope {
@@ -448,4 +473,141 @@ func (c *Customers) Update(ctx context.Context, request *customer.UpdateRequest,
 	}
 
 	return writeCustomer(cust)
+}
+
+func (c *Customers) Ban(ctx context.Context, request *customer.BanRequest, response *customer.BanResponse) error {
+	//Account is disabled such that
+	//- cannot use existing keys
+	//- cannot create new keys
+	//- cannot sign up with the same email address (it's still in use just not usable)
+	//
+	if err := authorizeAdmin(ctx); err != nil {
+		return err
+	}
+
+	var cm *CustomerModel
+	var err error
+	if len(request.Id) > 0 {
+		cm, err = readCustomerByID(request.Id)
+		if err != nil {
+			log.Errorf("Error banning customer %s", err)
+			return errors.InternalServerError("customers.ban", "Error while banning customer")
+		}
+	} else if len(request.Email) > 0 {
+		var err error
+		cm, err = readCustomerByEmail(request.Email)
+		if err != nil {
+			log.Errorf("Error banning customer %s", err)
+			return errors.InternalServerError("customers.ban", "Error while banning customer")
+		}
+	} else {
+		return errors.BadRequest("customers.ban", "Please specify either email or ID")
+	}
+
+	cm, err = updateCustomerStatusByID(cm.ID, statusBanned)
+	if err != nil {
+		return errors.InternalServerError("customers.ban", "Error banning customer %s", err)
+	}
+
+	if _, err := c.accountsService.Delete(ctx, &aproto.DeleteAccountRequest{
+		Id: cm.ID,
+	}); err != nil {
+		log.Errorf("Error deleting account %s", err)
+		return err
+	}
+
+	// Block the user at the API to kill any existing JWTs
+	_, err = c.apiService.AddToBlockList(ctx, &apiproto.AddToBlockListRequest{Id: cm.ID, Namespace: namespace.DefaultNamespace})
+	if err != nil {
+		log.Errorf("Error blocking customer at API, %s", err)
+		return err
+	}
+	var callerID string
+	if acc, ok := auth.AccountFromContext(ctx); ok {
+		callerID = acc.ID
+	}
+	ev := &customer.Event{
+		Type:     customer.EventType_EventTypeBanned,
+		Customer: objToProto(cm),
+		CallerId: callerID,
+	}
+	if err := mevents.Publish(customer.EventsTopic, ev); err != nil {
+		log.Errorf("Error publishing event %+v", ev)
+	}
+
+	return nil
+}
+
+func (c *Customers) Unban(ctx context.Context, request *customer.UnbanRequest, response *customer.UnbanResponse) error {
+	if err := authorizeAdmin(ctx); err != nil {
+		return err
+	}
+	var cm *CustomerModel
+	var err error
+	if len(request.Id) > 0 {
+		cm, err = readCustomerByID(request.Id)
+		if err != nil {
+			log.Errorf("Error unbanning customer %s", err)
+			return errors.InternalServerError("customers.unban", "Error while unbanning customer")
+		}
+	} else if len(request.Email) > 0 {
+		var err error
+		cm, err = readCustomerByEmail(request.Email)
+		if err != nil {
+			log.Errorf("Error unbanning customer %s", err)
+			return errors.InternalServerError("customers.unban", "Error while unbanning customer")
+		}
+	} else {
+		return errors.BadRequest("customers.ban", "Please specify either email or ID")
+	}
+
+	cm, err = updateCustomerStatusByID(cm.ID, statusVerified)
+	if err != nil {
+		log.Errorf("Error unbanning customer %s", err)
+		return errors.InternalServerError("customers.unban", "Error unbanning customer %s", err)
+	}
+
+	// create a new account
+	if _, err := c.createAuthAccount(ctx, cm.ID, cm.Email); err != nil {
+		return err
+	}
+
+	// Unblock the user at the API
+	_, err = c.apiService.RemoveFromBlockList(ctx, &apiproto.RemoveFromBlockListRequest{Id: cm.ID, Namespace: namespace.DefaultNamespace})
+	if err != nil {
+		log.Errorf("Error unblocking customer at API, %s", err)
+		return err
+	}
+
+	var callerID string
+	if acc, ok := auth.AccountFromContext(ctx); ok {
+		callerID = acc.ID
+	}
+	ev := &customer.Event{
+		Type:     customer.EventType_EventTypeUnbanned,
+		Customer: objToProto(cm),
+		CallerId: callerID,
+	}
+	if err := mevents.Publish(customer.EventsTopic, ev); err != nil {
+		log.Errorf("Error publishing event %+v", ev)
+	}
+
+	return nil
+}
+
+func (c *Customers) createAuthAccount(ctx context.Context, id, email string) (*auth.Account, error) {
+	// generate a random secret and get the user to do a password reset
+	secret := uuid.New().String()
+
+	acc, err := c.auth.Generate(id,
+		auth.WithScopes("customer"),
+		auth.WithSecret(secret),
+		auth.WithIssuer("micro"),
+		auth.WithName(email),
+		auth.WithType("customer"))
+	if err != nil {
+		log.Errorf("Error creating auth account for %v: %v", id, err)
+		return nil, errors.InternalServerError("customers.account", "Error generating account")
+	}
+	return acc, nil
 }
