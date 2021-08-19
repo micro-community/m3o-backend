@@ -117,6 +117,7 @@ func (e *Alert) ReportEvent(ctx context.Context, req *alert.ReportEventRequest, 
 		msg := fmt.Sprintf("Event received:\n```\n%v\n```", string(jsond))
 		_, _, _, err = e.slackClient.SendMessage(e.config.Slack.Channel, slack.MsgOptionUsername(e.config.Slack.Username), slack.MsgOptionText(msg, false))
 		if err != nil {
+			log.Errorf("Error sending to Slack %s", err)
 			return err
 		}
 	}
