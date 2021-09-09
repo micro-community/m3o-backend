@@ -419,6 +419,11 @@ func (e *Endtoend) signup() E2EResult {
 		for _, endpointName := range keys {
 			exs := examples[endpointName]
 			for _, ex := range exs {
+				if !ex.RunCheck {
+					log.Infof("Skipping %s %s %s", api.Name, endpointName, ex.Title)
+					// skip
+					continue
+				}
 				b, err := json.Marshal(ex.Request)
 				if err != nil {
 					log.Errorf("Failed to marshal example request for %s %s %s %s", api.Name, endpointName, ex.Title, err)

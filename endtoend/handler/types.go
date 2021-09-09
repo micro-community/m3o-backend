@@ -38,8 +38,9 @@ type MailinResponse struct{}
 type apiExamples map[string][]apiExample // map of endpoint name to list of examples
 
 type apiExample struct {
-	Title       string
-	Description string
-	Request     interface{}
-	Response    interface{}
+	Title       string      `json:"title"`
+	Description string      `json:"description"`
+	Request     interface{} `json:"request"`
+	Response    interface{} `json:"response"`
+	RunCheck    bool        `json:"run_check"`
 }
