@@ -54,6 +54,7 @@ func marshalExploreAPI(ae *APIEntry, svc *registry.Service) *pb.ExploreAPI {
 		Category:    ae.Category,
 		Icon:        ae.Icon,
 		Endpoints:   eps,
+		DisplayName: ae.DisplayName,
 	}
 }
 

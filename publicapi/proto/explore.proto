@@ -20,6 +20,7 @@ message ExploreAPI {
 	string category = 3;
 	string icon = 4;
 	repeated Endpoint endpoints = 5;
+	string display_name = 6;
 }
 
 // Endpoint is a simple named api endpoint

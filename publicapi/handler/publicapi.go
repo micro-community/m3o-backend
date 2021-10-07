@@ -34,6 +34,7 @@ type APIEntry struct {
 	Category     string
 	Icon         string
 	PostmanJSON  string
+	DisplayName  string
 }
 
 type Publicapi struct {
@@ -79,6 +80,7 @@ func (p *Publicapi) Publish(ctx context.Context, request *pb.PublishRequest, res
 		Category:     request.Api.Category,
 		Icon:         request.Api.Icon,
 		PostmanJSON:  request.Api.PostmanJson,
+		DisplayName:  request.Api.DisplayName,
 	}
 
 	if err := p.updateEntry(ctx, ae); err != nil {
@@ -318,7 +320,7 @@ func (p *Publicapi) Update(ctx context.Context, request *pb.UpdateRequest, respo
 }
 
 func marshal(ae *APIEntry) *pb.PublicAPI {
-	return &pb.PublicAPI{
+	ret := &pb.PublicAPI{
 		Id:           ae.ID,
 		Name:         ae.Name,
 		Description:  ae.Description,
@@ -329,5 +331,11 @@ func marshal(ae *APIEntry) *pb.PublicAPI {
 		Category:     ae.Category,
 		Icon:         ae.Icon,
 		PostmanJson:  ae.PostmanJSON,
+		DisplayName:  ae.DisplayName,
 	}
+	// hack while we transition to everything having a display name
+	if ret.DisplayName == "" {
+		ret.DisplayName = ret.Name
+	}
+	return ret
 }
