@@ -46,6 +46,7 @@ type ExploreService interface {
 	Search(ctx context.Context, in *SearchRequest, opts ...client.CallOption) (*SearchResponse, error)
 	API(ctx context.Context, in *APIRequest, opts ...client.CallOption) (*APIResponse, error)
 	ListCategories(ctx context.Context, in *ListCategoriesRequest, opts ...client.CallOption) (*ListCategoriesResponse, error)
+	Pricing(ctx context.Context, in *PricingRequest, opts ...client.CallOption) (*PricingResponse, error)
 }
 
 type exploreService struct {
@@ -100,6 +101,16 @@ func (c *exploreService) ListCategories(ctx context.Context, in *ListCategoriesR
 	return out, nil
 }
 
+func (c *exploreService) Pricing(ctx context.Context, in *PricingRequest, opts ...client.CallOption) (*PricingResponse, error) {
+	req := c.c.NewRequest(c.name, "Explore.Pricing", in)
+	out := new(PricingResponse)
+	err := c.c.Call(ctx, req, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Server API for Explore service
 
 type ExploreHandler interface {
@@ -107,6 +118,7 @@ type ExploreHandler interface {
 	Search(context.Context, *SearchRequest, *SearchResponse) error
 	API(context.Context, *APIRequest, *APIResponse) error
 	ListCategories(context.Context, *ListCategoriesRequest, *ListCategoriesResponse) error
+	Pricing(context.Context, *PricingRequest, *PricingResponse) error
 }
 
 func RegisterExploreHandler(s server.Server, hdlr ExploreHandler, opts ...server.HandlerOption) error {
@@ -115,6 +127,7 @@ func RegisterExploreHandler(s server.Server, hdlr ExploreHandler, opts ...server
 		Search(ctx context.Context, in *SearchRequest, out *SearchResponse) error
 		API(ctx context.Context, in *APIRequest, out *APIResponse) error
 		ListCategories(ctx context.Context, in *ListCategoriesRequest, out *ListCategoriesResponse) error
+		Pricing(ctx context.Context, in *PricingRequest, out *PricingResponse) error
 	}
 	type Explore struct {
 		explore
@@ -141,4 +154,8 @@ func (h *exploreHandler) API(ctx context.Context, in *APIRequest, out *APIRespon
 
 func (h *exploreHandler) ListCategories(ctx context.Context, in *ListCategoriesRequest, out *ListCategoriesResponse) error {
 	return h.ExploreHandler.ListCategories(ctx, in, out)
+}
+
+func (h *exploreHandler) Pricing(ctx context.Context, in *PricingRequest, out *PricingResponse) error {
+	return h.ExploreHandler.Pricing(ctx, in, out)
 }

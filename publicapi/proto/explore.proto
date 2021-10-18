@@ -11,6 +11,7 @@ service Explore {
 	rpc Search(SearchRequest) returns (SearchResponse) {}
 	rpc API(APIRequest) returns (APIResponse) {}
 	rpc ListCategories(ListCategoriesRequest) returns (ListCategoriesResponse) {}
+	rpc Pricing(PricingRequest) returns (PricingResponse) {}
 }
 
 // ExploreAPI is returned for index/search endpoints
@@ -60,4 +61,19 @@ message ListCategoriesRequest {}
 
 message ListCategoriesResponse {
 	repeated string categories = 1;
+}
+
+message PricingRequest {
+}
+
+message PricingItem {
+	string name = 1;
+	string id = 2;
+	map<string, int64> pricing = 3; // map of endpoints to price. Unit is 1/10,000ths of a cent which allows us to price in fractions e.g. a request costs 0.0001 cents or 10000 requests for 1 cent
+	string display_name = 4;
+	string icon = 5;
+}
+
+message PricingResponse {
+	repeated PricingItem prices = 1;
 }

@@ -20,11 +20,12 @@ import (
 
 type Explore struct {
 	sync.RWMutex
-	apiCache    []*API
-	catCache    []string
-	regCache    map[string]*registry.Service
-	lastUpdated time.Time
-	trackSearch model.Model
+	apiCache     []*API
+	catCache     []string
+	regCache     map[string]*registry.Service
+	pricingCache []*pb.PricingItem
+	lastUpdated  time.Time
+	trackSearch  model.Model
 }
 
 type SearchCount struct {
@@ -94,6 +95,7 @@ func (e *Explore) loadCache() ([]*API, error) {
 	regCache := map[string]*registry.Service{}
 	apiCache := []*API{}
 	catCache := map[string]bool{}
+	pricingCache := []*pb.PricingItem{}
 
 	// create a registry cache
 	for _, s := range svcs {
@@ -124,6 +126,24 @@ func (e *Explore) loadCache() ([]*API, error) {
 			ExploreAPI: marshalExploreAPI(&ae, svc),
 		})
 		catCache[ae.Category] = true
+
+		price := &pb.PricingItem{
+			Name:        ae.Name,
+			Id:          ae.ID,
+			Pricing:     ae.Pricing,
+			DisplayName: ae.DisplayName,
+			Icon:        ae.Icon,
+		}
+		if price.Pricing == nil {
+			price.Pricing = map[string]int64{}
+		}
+		// fill out all the endpoints
+		for _, ep := range svc.Endpoints {
+			if _, ok := price.Pricing[ep.Name]; !ok {
+				price.Pricing[ep.Name] = 0
+			}
+		}
+		pricingCache = append(pricingCache, price)
 	}
 
 	catCacheSlice := make([]string, 0, len(catCache))
@@ -136,6 +156,7 @@ func (e *Explore) loadCache() ([]*API, error) {
 	e.lastUpdated = time.Now()
 	e.apiCache = apiCache
 	e.catCache = catCacheSlice
+	e.pricingCache = pricingCache
 	e.Unlock()
 
 	// return the api cache
@@ -319,6 +340,34 @@ func (e *Explore) catList() ([]string, error) {
 	}
 	e.RLock()
 	cache = e.catCache
+	e.RUnlock()
+	return cache, nil
+}
+
+func (e *Explore) Pricing(ctx context.Context, request *pb.PricingRequest, response *pb.PricingResponse) error {
+	var err error
+	response.Prices, err = e.priceList()
+	if err != nil {
+		log.Errorf("Error retrieving pricing %s", err)
+		return errors.InternalServerError("explore.pricing", "Error retrieving pricing")
+	}
+	return nil
+}
+
+func (e *Explore) priceList() ([]*pb.PricingItem, error) {
+	e.RLock()
+	cache := e.pricingCache
+	e.RUnlock()
+
+	if len(cache) > 0 {
+		return cache, nil
+	}
+
+	if _, err := e.loadCache(); err != nil {
+		return nil, err
+	}
+	e.RLock()
+	cache = e.pricingCache
 	e.RUnlock()
 	return cache, nil
 }
