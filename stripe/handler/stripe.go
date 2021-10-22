@@ -48,6 +48,7 @@ type Stripe struct {
 	cancelURL         string
 	signingSecret     string
 	testSigningSecret string
+	testMode          bool // are we in the test environment?
 }
 
 func NewHandler(serv *service.Service) stripepb.StripeHandler {
@@ -58,6 +59,7 @@ func NewHandler(serv *service.Service) stripepb.StripeHandler {
 		SigningSecret     string `json:"signing_secret"`
 		TestAPIKey        string `json:"test_api_key"`
 		TestSigningSecret string `json:"test_signing_secret"`
+		TestMode          bool   `json:"test_mode"`
 	}{}
 	val, err := config.Get("micro.stripe")
 	if err != nil {
@@ -84,6 +86,7 @@ func NewHandler(serv *service.Service) stripepb.StripeHandler {
 		signingSecret:     configObj.SigningSecret,
 		testClient:        stripeclient.New(configObj.TestAPIKey, nil),
 		testSigningSecret: configObj.TestSigningSecret,
+		testMode:          configObj.TestMode,
 	}
 	s.consumeEvents()
 	return s
@@ -122,22 +125,22 @@ func (s *Stripe) Webhook(ctx context.Context, req *api.Request, rsp *api.Respons
 	return nil
 }
 
-func (s *Stripe) customerCreated(ctx context.Context, event *stripe.Event, isTest bool) error {
+func (s *Stripe) customerCreated(ctx context.Context, event *stripe.Event, isTestEvent bool) error {
 	// correlate customer based on email
 	// store mapping stripe id to our id
 	var cust stripe.Customer
 	if err := json.Unmarshal(event.Data.Raw, &cust); err != nil {
 		return err
 	}
-	// lookup customer on email
 
 	// m3o.com emails are special case
-	if isTest && !strings.HasSuffix(cust.Email, "@m3o.com") {
+	if !s.testMode && isTestEvent && !strings.HasSuffix(cust.Email, "@m3o.com") {
 		// drop it
-		log.Warnf("Received test event for non m3o.com email")
-		return errors.BadRequest("stripe.Webhook", "Test env ")
+		log.Debugf("Received test event for non m3o.com email")
+		return nil
 	}
 
+	// lookup customer on email
 	rsp, err := s.custSvc.Read(ctx, &custpb.ReadRequest{Email: cust.Email}, client.WithAuthToken())
 	if err != nil {
 		// TODO check if not found error
@@ -148,9 +151,14 @@ func (s *Stripe) customerCreated(ctx context.Context, event *stripe.Event, isTes
 		ID:       rsp.Customer.Id,
 		StripeID: cust.ID,
 	}
+	// if we already have a mapping for this customer abort, we don't want to overwrite an existing stripe mapping
+	_, err = store.Read(fmt.Sprintf(prefixM3OID, rsp.Customer.Id))
+	if err == store.ErrNotFound {
+		// persist it
+		return s.storeMapping(&cm)
+	}
+	return err
 
-	// persist it
-	return s.storeMapping(&cm)
 }
 
 func (s *Stripe) storeMapping(cm *CustomerMapping) error {
@@ -188,18 +196,12 @@ func (s *Stripe) chargeSucceeded(ctx context.Context, event *stripe.Event) error
 		return err
 	}
 	// lookup the customer
-	recs, err := store.Read(fmt.Sprintf(prefixStripeID, ch.Customer.ID))
+	cm, err := mappingForStripeCustomer(ch.Customer.ID)
 	if err != nil {
 		if err == store.ErrNotFound {
 			log.Errorf("Unrecognised customer for charge %s", ch.ID)
 			return nil
-		} else {
-			log.Errorf("Error looking up customer for charge %s", ch.ID)
 		}
-		return err
-	}
-	var cm CustomerMapping
-	if err := json.Unmarshal(recs[0].Value, &cm); err != nil {
 		return err
 	}
 
@@ -226,7 +228,10 @@ func (s *Stripe) paymentMethodAttached(ctx context.Context, event *stripe.Event)
 	}
 	cm, err := mappingForStripeCustomer(paymtMethod.Customer.ID)
 	if err != nil {
-		logger.Errorf("Error looking up customer mapping %s", err)
+		if err == store.ErrNotFound {
+			log.Errorf("Unrecognised customer for event %s", paymtMethod.Customer.ID)
+			return nil
+		}
 		return err
 	}
 
