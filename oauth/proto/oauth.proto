@@ -20,7 +20,9 @@ message AuthToken {
 	int64 expiry = 4;
 }
 
-message GoogleURLRequest{}
+message GoogleURLRequest{
+	bool test = 1;
+}
 
 message GoogleURLResponse{
 	string url = 1;
@@ -30,6 +32,7 @@ message GoogleLoginRequest{
 	string state = 1;
 	string code = 2;
 	string errorReason = 3;
+	bool test = 4;
 }
 
 message LoginResponse{
@@ -39,7 +42,9 @@ message LoginResponse{
 	bool isSignup = 4;
 }
 
-message GithubURLRequest{}
+message GithubURLRequest{
+	bool test = 1;
+}
 
 message GithubURLResponse{
 	string url = 1;
@@ -49,4 +54,5 @@ message GithubLoginRequest{
 	string state = 1;
 	string code = 2;
 	string errorReason = 3;
+	bool test = 4;
 }

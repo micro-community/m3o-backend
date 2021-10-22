@@ -41,9 +41,23 @@ var (
 		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email"},
 		Endpoint:     google.Endpoint,
 	}
+	oauthConfGlTest = &oauth2.Config{
+		ClientID:     "",
+		ClientSecret: "",
+		RedirectURL:  "http://127.0.0.1:4200/google-login",
+		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email"},
+		Endpoint:     google.Endpoint,
+	}
 	oauthStateStringGl = ""
 
 	oauthConfGithub = &oauth2.Config{
+		ClientID:     "",
+		ClientSecret: "",
+		RedirectURL:  "http://127.0.0.1:4200/github-login",
+		Scopes:       []string{"user:email"},
+		Endpoint:     github.Endpoint,
+	}
+	oauthConfGithubTest = &oauth2.Config{
 		ClientID:     "",
 		ClientSecret: "",
 		RedirectURL:  "http://127.0.0.1:4200/github-login",
@@ -58,15 +72,21 @@ const (
 )
 
 type googleConf struct {
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
-	RedirectURL  string `json:"redirect_url"`
+	ClientID         string `json:"client_id"`
+	TestClientID     string `json:"test_client_id"`
+	ClientSecret     string `json:"client_secret"`
+	TestClientSecret string `json:"test_client_secret"`
+	RedirectURL      string `json:"redirect_url"`
+	TestRedirectURL  string `json:"test_redirect_url"`
 }
 
 type githubConf struct {
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
-	RedirectURL  string `json:"redirect_url"`
+	ClientID         string `json:"client_id"`
+	TestClientID     string `json:"test_client_id"`
+	ClientSecret     string `json:"client_secret"`
+	TestClientSecret string `json:"test_client_secret"`
+	RedirectURL      string `json:"redirect_url"`
+	TestRedirectURL  string `json:"test_redirect_url"`
 }
 
 type oauthConf struct {
@@ -108,6 +128,12 @@ func NewOauth(srv *service.Service, auth auth.Auth) *Oauth {
 		oauthConfGl.RedirectURL = c.Google.RedirectURL
 	}
 
+	oauthConfGlTest.ClientID = c.Google.TestClientID
+	oauthConfGlTest.ClientSecret = c.Google.TestClientSecret
+	if c.Google.TestRedirectURL != "" {
+		oauthConfGlTest.RedirectURL = c.Google.TestRedirectURL
+	}
+
 	if c.Github.ClientSecret == "" {
 		logger.Fatal("No google oauth client ID")
 	}
@@ -118,6 +144,12 @@ func NewOauth(srv *service.Service, auth auth.Auth) *Oauth {
 	oauthConfGithub.ClientSecret = c.Github.ClientSecret
 	if c.Github.RedirectURL != "" {
 		oauthConfGithub.RedirectURL = c.Github.RedirectURL
+	}
+
+	oauthConfGithubTest.ClientID = c.Github.TestClientID
+	oauthConfGithubTest.ClientSecret = c.Github.TestClientSecret
+	if c.Github.TestRedirectURL != "" {
+		oauthConfGithubTest.RedirectURL = c.Github.TestRedirectURL
 	}
 
 	s := &Oauth{
@@ -132,15 +164,20 @@ func NewOauth(srv *service.Service, auth auth.Auth) *Oauth {
 
 // GoogleOauthURL returns the url which kicks off the google oauth flow
 func (e *Oauth) GoogleURL(ctx context.Context, req *oauth.GoogleURLRequest, rsp *oauth.GoogleURLResponse) error {
-	URL, err := url.Parse(oauthConfGl.Endpoint.AuthURL)
+	conf := oauthConfGl
+	if req.Test {
+		conf = oauthConfGlTest
+	}
+
+	URL, err := url.Parse(conf.Endpoint.AuthURL)
 	if err != nil {
 		return err
 	}
 
 	parameters := url.Values{}
-	parameters.Add("client_id", oauthConfGl.ClientID)
-	parameters.Add("scope", strings.Join(oauthConfGl.Scopes, " "))
-	parameters.Add("redirect_uri", oauthConfGl.RedirectURL)
+	parameters.Add("client_id", conf.ClientID)
+	parameters.Add("scope", strings.Join(conf.Scopes, " "))
+	parameters.Add("redirect_uri", conf.RedirectURL)
 	parameters.Add("response_type", "code")
 	//parameters.Add("state", oauthStateString)
 	URL.RawQuery = parameters.Encode()
@@ -151,6 +188,11 @@ func (e *Oauth) GoogleURL(ctx context.Context, req *oauth.GoogleURLRequest, rsp 
 }
 
 func (e *Oauth) GoogleLogin(ctx context.Context, req *oauth.GoogleLoginRequest, rsp *oauth.LoginResponse) error {
+	conf := oauthConfGl
+	if req.Test {
+		conf = oauthConfGlTest
+	}
+
 	state := req.State
 	if state != oauthStateStringGl {
 		return fmt.Errorf("invalid oauth state, expected " + oauthStateStringGl + ", got " + state + "\n")
@@ -166,7 +208,7 @@ func (e *Oauth) GoogleLogin(ctx context.Context, req *oauth.GoogleLoginRequest, 
 		return fmt.Errorf("code not found")
 	}
 
-	token, err := oauthConfGl.Exchange(oauth2.NoContext, code)
+	token, err := conf.Exchange(oauth2.NoContext, code)
 	if err != nil {
 		return fmt.Errorf("failed exchange: %v", err)
 	}
@@ -211,15 +253,20 @@ func (e *Oauth) GoogleLogin(ctx context.Context, req *oauth.GoogleLoginRequest, 
 }
 
 func (e *Oauth) GithubURL(ctx context.Context, req *oauth.GithubURLRequest, rsp *oauth.GithubURLResponse) error {
-	URL, err := url.Parse(oauthConfGithub.Endpoint.AuthURL)
+	conf := oauthConfGithub
+	if req.Test {
+		conf = oauthConfGithubTest
+	}
+
+	URL, err := url.Parse(conf.Endpoint.AuthURL)
 	if err != nil {
 		return err
 	}
 
 	parameters := url.Values{}
-	parameters.Add("client_id", oauthConfGithub.ClientID)
-	parameters.Add("scope", strings.Join(oauthConfGithub.Scopes, " "))
-	parameters.Add("redirect_uri", oauthConfGithub.RedirectURL)
+	parameters.Add("client_id", conf.ClientID)
+	parameters.Add("scope", strings.Join(conf.Scopes, " "))
+	parameters.Add("redirect_uri", conf.RedirectURL)
 	parameters.Add("response_type", "code")
 	//parameters.Add("state", oauthStateString)
 	URL.RawQuery = parameters.Encode()
@@ -230,6 +277,11 @@ func (e *Oauth) GithubURL(ctx context.Context, req *oauth.GithubURLRequest, rsp 
 }
 
 func (e *Oauth) GithubLogin(ctx context.Context, req *oauth.GithubLoginRequest, rsp *oauth.LoginResponse) error {
+	conf := oauthConfGithub
+	if req.Test {
+		conf = oauthConfGithubTest
+	}
+
 	state := req.State
 	if state != oauthStateStringGl {
 		return fmt.Errorf("invalid oauth state, expected " + oauthStateStringGl + ", got " + state + "\n")
@@ -245,7 +297,7 @@ func (e *Oauth) GithubLogin(ctx context.Context, req *oauth.GithubLoginRequest, 
 		return fmt.Errorf("code not found")
 	}
 
-	token, err := oauthConfGithub.Exchange(oauth2.NoContext, code)
+	token, err := conf.Exchange(oauth2.NoContext, code)
 	if err != nil {
 		return fmt.Errorf("failed exchange: %v", err)
 	}
