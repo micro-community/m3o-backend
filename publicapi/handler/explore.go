@@ -12,7 +12,6 @@ import (
 	"github.com/micro/micro/v3/service"
 	"github.com/micro/micro/v3/service/errors"
 	log "github.com/micro/micro/v3/service/logger"
-	logger "github.com/micro/micro/v3/service/logger"
 	model "github.com/micro/micro/v3/service/model"
 	"github.com/micro/micro/v3/service/registry"
 	"github.com/micro/micro/v3/service/store"
@@ -43,7 +42,23 @@ type API struct {
 func marshalExploreAPI(ae *APIEntry, svc *registry.Service) *pb.ExploreAPI {
 	eps := []*pb.Endpoint{}
 
+	oaj := struct {
+		Paths map[string]interface{} `json:"paths"`
+	}{}
+
+	if err := json.Unmarshal([]byte(ae.OpenAPIJSON), &oaj); err != nil {
+		log.Errorf("Error unmarshalling open API json %s", err)
+		oaj.Paths = map[string]interface{}{}
+	}
 	for _, ep := range svc.Endpoints {
+		// hacks to stop certain endpoints not showing
+		if _, ok := ep.Metadata["subscriber"]; ok {
+			continue
+		}
+		path := "/" + svc.Name + "/" + strings.ReplaceAll(ep.Name, ".", "/")
+		if _, ok := oaj.Paths[path]; !ok {
+			continue
+		}
 		eps = append(eps, &pb.Endpoint{
 			Name: ep.Name,
 		})
@@ -234,7 +249,7 @@ func (e *Explore) Search(ctx context.Context, request *pb.SearchRequest, respons
 		}
 		err := e.recordSearch(request.SearchTerm)
 		if err != nil {
-			logger.Error(err)
+			log.Error(err)
 		}
 	}()
 	list, err := e.exploreList()
