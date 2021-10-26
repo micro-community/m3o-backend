@@ -24,6 +24,8 @@ service Customers {
 	rpc Login(LoginRequest) returns (LoginResponse) {}
 	// Logout logs the user out
 	rpc Logout(LogoutRequest) returns (LogoutResponse) {}
+	// Update the name
+	rpc UpdateName(UpdateNameRequest) returns (UpdateNameResponse) {}
 }
 
 message CreateRequest {
@@ -41,6 +43,8 @@ message Customer {
 	int64 created = 3;
 	string email = 6;
 	int64 updated = 7;
+	map<string,string> meta = 8;
+	string name = 9;
 }
 
 message DeleteRequest {
@@ -119,3 +123,10 @@ message LogoutRequest {
 message LogoutResponse {
 
 }
+
+message UpdateNameRequest {
+	string name = 1;
+	string id = 2;
+}
+
+message UpdateNameResponse {}

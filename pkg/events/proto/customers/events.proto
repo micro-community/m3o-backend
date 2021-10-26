@@ -64,6 +64,8 @@ message Customer {
   int64 created = 3;
   string email = 6;
   int64 updated = 7;
+  string name = 8;
+  map<string, string> meta = 9;
 }
 
 

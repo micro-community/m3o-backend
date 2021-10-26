@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -55,6 +56,8 @@ type CustomerModel struct {
 	Status  string
 	Created int64
 	Updated int64
+	Name    string
+	Meta    map[string]string
 }
 
 func New(service *service.Service) *Customers {
@@ -73,6 +76,8 @@ func objToProto(cust *CustomerModel) *customer.Customer {
 		Created: cust.Created,
 		Email:   cust.Email,
 		Updated: cust.Updated,
+		Name:    cust.Name,
+		Meta:    cust.Meta,
 	}
 }
 
@@ -83,11 +88,14 @@ func objToEvent(cust *CustomerModel) *eventspb.Customer {
 		Created: cust.Created,
 		Email:   cust.Email,
 		Updated: cust.Updated,
+		Name:    cust.Name,
+		Meta:    cust.Meta,
 	}
 }
 
 func (c *Customers) Create(ctx context.Context, request *customer.CreateRequest, response *customer.CreateResponse) error {
-	if err := authorizeCall(ctx, ""); err != nil {
+	acc, err := authorizeCall(ctx, "")
+	if err != nil {
 		return err
 	}
 	email := request.Email
@@ -126,14 +134,9 @@ func (c *Customers) Create(ctx context.Context, request *customer.CreateRequest,
 	response.Customer = objToProto(cust)
 
 	// Publish the event
-	var callerID string
-	if acc, ok := auth.AccountFromContext(ctx); ok {
-		callerID = acc.ID
-	}
-
 	ev := &eventspb.Event{
 		Type:     eventspb.EventType_EventTypeCreated,
-		CallerId: callerID,
+		CallerId: acc.ID,
 		Created:  &eventspb.Created{},
 		Customer: objToEvent(cust),
 	}
@@ -160,7 +163,8 @@ func (c *Customers) MarkVerified(ctx context.Context, request *customer.MarkVeri
 	if err != nil {
 		return err
 	}
-	if err := authorizeCall(ctx, cust.ID); err != nil {
+	acc, err := authorizeCall(ctx, cust.ID)
+	if err != nil {
 		return err
 	}
 
@@ -170,14 +174,10 @@ func (c *Customers) MarkVerified(ctx context.Context, request *customer.MarkVeri
 	}
 
 	// Publish the event
-	var callerID string
-	if acc, ok := auth.AccountFromContext(ctx); ok {
-		callerID = acc.ID
-	}
 	ev := &eventspb.Event{
 		Type:     eventspb.EventType_EventTypeVerified,
 		Customer: objToEvent(cus),
-		CallerId: callerID,
+		CallerId: acc.ID,
 	}
 	if err := mevents.Publish(eventspb.Topic, ev); err != nil {
 		log.Errorf("Error publishing event %+v %s", ev, err)
@@ -210,6 +210,15 @@ func readCustomer(id, prefix string) (*CustomerModel, error) {
 	if cust.Status == statusDeleted {
 		return nil, errors.NotFound("customers.read.notfound", "Customer not found")
 	}
+
+	// hack
+	if cust.Meta == nil {
+		cust.Meta = map[string]string{}
+	}
+	if cust.Meta["generated_name"] == "" {
+		cust.Meta["generated_name"] = superheroes[rand.Int()%len(superheroes)]
+	}
+	writeCustomer(cust)
 	return cust, nil
 }
 
@@ -227,7 +236,7 @@ func (c *Customers) Read(ctx context.Context, request *customer.ReadRequest, res
 	if err != nil {
 		return err
 	}
-	if err := authorizeCall(ctx, cust.ID); err != nil {
+	if _, err := authorizeCall(ctx, cust.ID); err != nil {
 		return err
 	}
 	response.Customer = objToProto(cust)
@@ -245,7 +254,7 @@ func (c *Customers) Delete(ctx context.Context, request *customer.DeleteRequest,
 		}
 		request.Id = c.ID
 	}
-	if err := authorizeCall(ctx, request.Id); err != nil {
+	if _, err := authorizeCall(ctx, request.Id); err != nil {
 		return err
 	}
 
@@ -282,6 +291,13 @@ func writeCustomer(cust *CustomerModel) error {
 		cust.Created = now
 	}
 	cust.Updated = now
+	if cust.Meta == nil {
+		cust.Meta = map[string]string{}
+	}
+	if cust.Meta["generated_name"] == "" {
+		cust.Meta["generated_name"] = superheroes[rand.Int()%len(superheroes)]
+	}
+
 	b, _ := json.Marshal(*cust)
 	if err := mstore.Write(&mstore.Record{
 		Key:   prefixCustomer + cust.ID,
@@ -299,24 +315,24 @@ func writeCustomer(cust *CustomerModel) error {
 	return nil
 }
 
-func authorizeCall(ctx context.Context, customerID string) error {
+func authorizeCall(ctx context.Context, customerID string) (*auth.Account, error) {
 	account, ok := auth.AccountFromContext(ctx)
 	if !ok {
-		return errors.Unauthorized("customers", "Unauthorized request")
+		return nil, errors.Unauthorized("customers", "Unauthorized request")
 	}
 	if account.Issuer != microNamespace {
-		return errors.Unauthorized("customers", "Unauthorized request")
+		return nil, errors.Unauthorized("customers", "Unauthorized request")
 	}
 	if account.Type == "customer" && account.ID == customerID {
-		return nil
+		return account, nil
 	}
 	if account.Type == "user" && hasScope("admin", account.Scopes) {
-		return nil
+		return account, nil
 	}
 	if account.Type == "service" {
-		return nil
+		return account, nil
 	}
-	return errors.Unauthorized("customers", "Unauthorized request")
+	return nil, errors.Unauthorized("customers", "Unauthorized request")
 }
 
 func authorizeAdmin(ctx context.Context) error {
@@ -419,8 +435,7 @@ func ignoreDeleteError(err error) error {
 
 // List is a temporary endpoint which will very quickly become unusable due to the way it lists entries
 func (c *Customers) List(ctx context.Context, request *customer.ListRequest, response *customer.ListResponse) error {
-	acc, ok := auth.AccountFromContext(ctx)
-	if !ok || acc.Issuer != microNamespace || acc.Type != "user" || !hasScope("admin", acc.Scopes) {
+	if err := authorizeAdmin(ctx); err != nil {
 		return errors.Unauthorized("customers", "Unauthorized")
 	}
 
@@ -452,7 +467,7 @@ func (c *Customers) List(ctx context.Context, request *customer.ListRequest, res
 }
 
 func (c *Customers) Update(ctx context.Context, request *customer.UpdateRequest, response *customer.UpdateResponse) error {
-	if err := authorizeCall(ctx, request.Customer.Id); err != nil {
+	if err := authorizeAdmin(ctx); err != nil {
 		return err
 	}
 	cust, err := readCustomerByID(request.Customer.Id)
@@ -469,6 +484,25 @@ func (c *Customers) Update(ctx context.Context, request *customer.UpdateRequest,
 			changed = true
 		}
 	}
+
+	if cust.Name != request.Customer.Name {
+		cust.Name = request.Customer.Name
+		changed = true
+	}
+
+	if len(cust.Meta) != len(request.Customer.Meta) {
+		cust.Meta = request.Customer.Meta
+		changed = true
+	} else {
+		for k, v := range request.Customer.Meta {
+			if cust.Meta[k] != v {
+				cust.Meta = request.Customer.Meta
+				changed = true
+				break
+			}
+		}
+	}
+
 	// TODO support email changing - would require reverification
 	if !changed {
 		return nil
@@ -706,4 +740,29 @@ func (c *Customers) Logout(ctx context.Context, request *customer.LogoutRequest,
 	}()
 
 	return nil
+}
+
+func (c *Customers) UpdateName(ctx context.Context, request *customer.UpdateNameRequest, response *customer.UpdateNameResponse) error {
+	acc, err := authorizeCall(ctx, request.Id)
+	if err != nil {
+		return errors.Forbidden("customers.UpdateName", "Forbidden")
+	}
+
+	cust, err := readCustomerByID(request.Id)
+	if err != nil {
+		log.Errorf("Error reading customer %s", err)
+		return errors.InternalServerError("customers.UpdateName", "Error updating name")
+	}
+
+	ev := &eventspb.Event{
+		Type:     eventspb.EventType_EventTypeUpdated,
+		Customer: objToEvent(cust),
+		CallerId: acc.ID,
+	}
+	if err := mevents.Publish(eventspb.Topic, ev); err != nil {
+		log.Errorf("Error publishing event %+v", ev)
+	}
+	cust.Name = request.Name
+
+	return writeCustomer(cust)
 }

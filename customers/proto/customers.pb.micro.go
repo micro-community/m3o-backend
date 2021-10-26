@@ -62,6 +62,8 @@ type CustomersService interface {
 	Login(ctx context.Context, in *LoginRequest, opts ...client.CallOption) (*LoginResponse, error)
 	// Logout logs the user out
 	Logout(ctx context.Context, in *LogoutRequest, opts ...client.CallOption) (*LogoutResponse, error)
+	// Update the name
+	UpdateName(ctx context.Context, in *UpdateNameRequest, opts ...client.CallOption) (*UpdateNameResponse, error)
 }
 
 type customersService struct {
@@ -176,6 +178,16 @@ func (c *customersService) Logout(ctx context.Context, in *LogoutRequest, opts .
 	return out, nil
 }
 
+func (c *customersService) UpdateName(ctx context.Context, in *UpdateNameRequest, opts ...client.CallOption) (*UpdateNameResponse, error) {
+	req := c.c.NewRequest(c.name, "Customers.UpdateName", in)
+	out := new(UpdateNameResponse)
+	err := c.c.Call(ctx, req, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Server API for Customers service
 
 type CustomersHandler interface {
@@ -199,6 +211,8 @@ type CustomersHandler interface {
 	Login(context.Context, *LoginRequest, *LoginResponse) error
 	// Logout logs the user out
 	Logout(context.Context, *LogoutRequest, *LogoutResponse) error
+	// Update the name
+	UpdateName(context.Context, *UpdateNameRequest, *UpdateNameResponse) error
 }
 
 func RegisterCustomersHandler(s server.Server, hdlr CustomersHandler, opts ...server.HandlerOption) error {
@@ -213,6 +227,7 @@ func RegisterCustomersHandler(s server.Server, hdlr CustomersHandler, opts ...se
 		Unban(ctx context.Context, in *UnbanRequest, out *UnbanResponse) error
 		Login(ctx context.Context, in *LoginRequest, out *LoginResponse) error
 		Logout(ctx context.Context, in *LogoutRequest, out *LogoutResponse) error
+		UpdateName(ctx context.Context, in *UpdateNameRequest, out *UpdateNameResponse) error
 	}
 	type Customers struct {
 		customers
@@ -263,4 +278,8 @@ func (h *customersHandler) Login(ctx context.Context, in *LoginRequest, out *Log
 
 func (h *customersHandler) Logout(ctx context.Context, in *LogoutRequest, out *LogoutResponse) error {
 	return h.CustomersHandler.Logout(ctx, in, out)
+}
+
+func (h *customersHandler) UpdateName(ctx context.Context, in *UpdateNameRequest, out *UpdateNameResponse) error {
+	return h.CustomersHandler.UpdateName(ctx, in, out)
 }

@@ -160,6 +160,21 @@ type FakeCustomersService struct {
 		result1 *customers.UpdateResponse
 		result2 error
 	}
+	UpdateNameStub        func(context.Context, *customers.UpdateNameRequest, ...client.CallOption) (*customers.UpdateNameResponse, error)
+	updateNameMutex       sync.RWMutex
+	updateNameArgsForCall []struct {
+		arg1 context.Context
+		arg2 *customers.UpdateNameRequest
+		arg3 []client.CallOption
+	}
+	updateNameReturns struct {
+		result1 *customers.UpdateNameResponse
+		result2 error
+	}
+	updateNameReturnsOnCall map[int]struct {
+		result1 *customers.UpdateNameResponse
+		result2 error
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -824,6 +839,72 @@ func (fake *FakeCustomersService) UpdateReturnsOnCall(i int, result1 *customers.
 	}{result1, result2}
 }
 
+func (fake *FakeCustomersService) UpdateName(arg1 context.Context, arg2 *customers.UpdateNameRequest, arg3 ...client.CallOption) (*customers.UpdateNameResponse, error) {
+	fake.updateNameMutex.Lock()
+	ret, specificReturn := fake.updateNameReturnsOnCall[len(fake.updateNameArgsForCall)]
+	fake.updateNameArgsForCall = append(fake.updateNameArgsForCall, struct {
+		arg1 context.Context
+		arg2 *customers.UpdateNameRequest
+		arg3 []client.CallOption
+	}{arg1, arg2, arg3})
+	stub := fake.UpdateNameStub
+	fakeReturns := fake.updateNameReturns
+	fake.recordInvocation("UpdateName", []interface{}{arg1, arg2, arg3})
+	fake.updateNameMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3...)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeCustomersService) UpdateNameCallCount() int {
+	fake.updateNameMutex.RLock()
+	defer fake.updateNameMutex.RUnlock()
+	return len(fake.updateNameArgsForCall)
+}
+
+func (fake *FakeCustomersService) UpdateNameCalls(stub func(context.Context, *customers.UpdateNameRequest, ...client.CallOption) (*customers.UpdateNameResponse, error)) {
+	fake.updateNameMutex.Lock()
+	defer fake.updateNameMutex.Unlock()
+	fake.UpdateNameStub = stub
+}
+
+func (fake *FakeCustomersService) UpdateNameArgsForCall(i int) (context.Context, *customers.UpdateNameRequest, []client.CallOption) {
+	fake.updateNameMutex.RLock()
+	defer fake.updateNameMutex.RUnlock()
+	argsForCall := fake.updateNameArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeCustomersService) UpdateNameReturns(result1 *customers.UpdateNameResponse, result2 error) {
+	fake.updateNameMutex.Lock()
+	defer fake.updateNameMutex.Unlock()
+	fake.UpdateNameStub = nil
+	fake.updateNameReturns = struct {
+		result1 *customers.UpdateNameResponse
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeCustomersService) UpdateNameReturnsOnCall(i int, result1 *customers.UpdateNameResponse, result2 error) {
+	fake.updateNameMutex.Lock()
+	defer fake.updateNameMutex.Unlock()
+	fake.UpdateNameStub = nil
+	if fake.updateNameReturnsOnCall == nil {
+		fake.updateNameReturnsOnCall = make(map[int]struct {
+			result1 *customers.UpdateNameResponse
+			result2 error
+		})
+	}
+	fake.updateNameReturnsOnCall[i] = struct {
+		result1 *customers.UpdateNameResponse
+		result2 error
+	}{result1, result2}
+}
+
 func (fake *FakeCustomersService) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -847,6 +928,8 @@ func (fake *FakeCustomersService) Invocations() map[string][][]interface{} {
 	defer fake.unbanMutex.RUnlock()
 	fake.updateMutex.RLock()
 	defer fake.updateMutex.RUnlock()
+	fake.updateNameMutex.RLock()
+	defer fake.updateNameMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value
