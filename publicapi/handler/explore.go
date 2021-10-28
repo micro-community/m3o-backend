@@ -257,12 +257,29 @@ func (e *Explore) Search(ctx context.Context, request *pb.SearchRequest, respons
 		return err
 	}
 
+	matchedCat := func(cats []string, theCat string) bool {
+		if len(cats) == 0 {
+			return true // blank list matches everything
+		}
+		for _, cat := range cats {
+			if cat == theCat {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	theCats := request.Categories
+	if len(request.Category) > 0 {
+		theCats = append(theCats, request.Category)
+	}
+
 	if request.SearchTerm == "" {
 		for _, api := range list {
-			if len(request.Category) > 0 && request.Category != api.ExploreAPI.Category {
-				continue
+			if matchedCat(theCats, api.ExploreAPI.Category) {
+				response.Apis = append(response.Apis, api.ExploreAPI)
 			}
-			response.Apis = append(response.Apis, api.ExploreAPI)
 		}
 		return nil
 	}
@@ -277,7 +294,7 @@ func (e *Explore) Search(ctx context.Context, request *pb.SearchRequest, respons
 	matchedOther := []*pb.ExploreAPI{}
 
 	for _, api := range list {
-		if len(request.Category) > 0 && request.Category != api.ExploreAPI.Category {
+		if !matchedCat(theCats, api.ExploreAPI.Category) {
 			continue
 		}
 
