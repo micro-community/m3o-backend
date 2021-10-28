@@ -6,7 +6,7 @@ package usage
 import (
 	fmt "fmt"
 	proto "github.com/golang/protobuf/proto"
-	_ "github.com/golang/protobuf/ptypes/struct"
+	_ "google.golang.org/protobuf/types/known/structpb"
 	math "math"
 )
 
@@ -48,6 +48,7 @@ type UsageService interface {
 	DeleteCustomer(ctx context.Context, in *DeleteCustomerRequest, opts ...client.CallOption) (*DeleteCustomerResponse, error)
 	SaveEvent(ctx context.Context, in *SaveEventRequest, opts ...client.CallOption) (*SaveEventResponse, error)
 	ListEvents(ctx context.Context, in *ListEventsRequest, opts ...client.CallOption) (*ListEventsResponse, error)
+	ListAPIRanks(ctx context.Context, in *ListAPIRanksRequest, opts ...client.CallOption) (*ListAPIRanksResponse, error)
 }
 
 type usageService struct {
@@ -112,6 +113,16 @@ func (c *usageService) ListEvents(ctx context.Context, in *ListEventsRequest, op
 	return out, nil
 }
 
+func (c *usageService) ListAPIRanks(ctx context.Context, in *ListAPIRanksRequest, opts ...client.CallOption) (*ListAPIRanksResponse, error) {
+	req := c.c.NewRequest(c.name, "Usage.ListAPIRanks", in)
+	out := new(ListAPIRanksResponse)
+	err := c.c.Call(ctx, req, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Server API for Usage service
 
 type UsageHandler interface {
@@ -120,6 +131,7 @@ type UsageHandler interface {
 	DeleteCustomer(context.Context, *DeleteCustomerRequest, *DeleteCustomerResponse) error
 	SaveEvent(context.Context, *SaveEventRequest, *SaveEventResponse) error
 	ListEvents(context.Context, *ListEventsRequest, *ListEventsResponse) error
+	ListAPIRanks(context.Context, *ListAPIRanksRequest, *ListAPIRanksResponse) error
 }
 
 func RegisterUsageHandler(s server.Server, hdlr UsageHandler, opts ...server.HandlerOption) error {
@@ -129,6 +141,7 @@ func RegisterUsageHandler(s server.Server, hdlr UsageHandler, opts ...server.Han
 		DeleteCustomer(ctx context.Context, in *DeleteCustomerRequest, out *DeleteCustomerResponse) error
 		SaveEvent(ctx context.Context, in *SaveEventRequest, out *SaveEventResponse) error
 		ListEvents(ctx context.Context, in *ListEventsRequest, out *ListEventsResponse) error
+		ListAPIRanks(ctx context.Context, in *ListAPIRanksRequest, out *ListAPIRanksResponse) error
 	}
 	type Usage struct {
 		usage
@@ -159,4 +172,8 @@ func (h *usageHandler) SaveEvent(ctx context.Context, in *SaveEventRequest, out 
 
 func (h *usageHandler) ListEvents(ctx context.Context, in *ListEventsRequest, out *ListEventsResponse) error {
 	return h.UsageHandler.ListEvents(ctx, in, out)
+}
+
+func (h *usageHandler) ListAPIRanks(ctx context.Context, in *ListAPIRanksRequest, out *ListAPIRanksResponse) error {
+	return h.UsageHandler.ListAPIRanks(ctx, in, out)
 }

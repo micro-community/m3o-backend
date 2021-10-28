@@ -24,6 +24,7 @@ func main() {
 
 	c := cron.New()
 	c.AddFunc("1 0 * * *", p.UsageCron)
+	c.AddFunc("1 1 * * *", p.RankingCron)
 	c.Start()
 	traceCloser := tracing.SetupOpentracing("usage")
 	defer traceCloser.Close()

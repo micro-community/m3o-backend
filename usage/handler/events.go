@@ -13,6 +13,10 @@ import (
 	"github.com/micro/micro/v3/service/logger"
 )
 
+const (
+	totalID = "total"
+)
+
 func (p *UsageSvc) consumeEvents() {
 	go pevents.ProcessTopic(requests.Topic, "usage", p.processV1apiEvents)
 	go pevents.ProcessTopic(eventspb.Topic, "usage", p.processCustomerEvents)
@@ -42,8 +46,8 @@ func (p *UsageSvc) processRequest(ctx context.Context, event *requests.Request, 
 	_, err := p.c.incr(ctx, event.UserId, event.ApiName, 1, t)
 	p.c.incr(ctx, event.UserId, fmt.Sprintf("%s$%s", event.ApiName, event.EndpointName), 1, t)
 	// incr total counts for the API and individual endpoint
-	p.c.incr(ctx, "total", event.ApiName, 1, t)
-	p.c.incr(ctx, "total", fmt.Sprintf("%s$%s", event.ApiName, event.EndpointName), 1, t)
+	p.c.incr(ctx, totalID, event.ApiName, 1, t)
+	p.c.incr(ctx, totalID, fmt.Sprintf("%s$%s", event.ApiName, event.EndpointName), 1, t)
 	return err
 }
 

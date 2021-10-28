@@ -11,6 +11,7 @@ service Usage {
 	rpc DeleteCustomer(DeleteCustomerRequest) returns (DeleteCustomerResponse) {}
 	rpc SaveEvent(SaveEventRequest) returns (SaveEventResponse) {}
 	rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {}
+	rpc ListAPIRanks(ListAPIRanksRequest) returns (ListAPIRanksResponse) {}
 }
 
 message ReadRequest {
@@ -61,6 +62,28 @@ message ListEventsRequest{
 	string table = 1;
 }
 
-message ListEventsResponse{
+message ListEventsResponse {
 	repeated Event events = 1;
+}
+
+message ListAPIRanksRequest {
+
+}
+
+message ListAPIRanksResponse {
+	repeated APIRankItem ranks = 1;
+	repeated APIRankUserItem global_top_users = 3;
+}
+
+message APIRankItem {
+	string api_name = 1;
+	int32 position = 2;
+	repeated APIRankUserItem top_users = 3;
+	// popularity is a 1-10 rating of how much usage this API is getting
+	int32 popularity = 4;
+}
+
+message APIRankUserItem {
+	string user_name = 1;
+	int32 position = 2;
 }
