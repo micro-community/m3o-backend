@@ -187,7 +187,7 @@ func (e *Endtoend) CronCheck() {
 
 func (e *Endtoend) runCheck() error {
 	start := time.Now()
-	res := e.signup()
+	res := e.signupAndRunExamples()
 
 	// record the result
 	result := checkResult{
@@ -204,6 +204,14 @@ func (e *Endtoend) runCheck() error {
 			result.Error = res.examplesErr()
 		}
 	}
+	cr, err := e.checkSite()
+	if err != nil {
+		result.Error = err.Error()
+	} else if len(cr.errs) > 0 {
+		result.Error = cr.err()
+		result.Passed = false
+	}
+
 	b, _ := json.Marshal(result)
 
 	mstore.Write(&mstore.Record{
@@ -232,10 +240,22 @@ func (e *Endtoend) runCheck() error {
 			},
 		}, client.WithAuthToken())
 	}
+	if !cr.ok {
+		e.alertSvc.ReportEvent(context.Background(), &alertpb.ReportEventRequest{
+			Event: &alertpb.Event{
+				Category: "monitoring",
+				Action:   "website",
+				Label:    "endtoend",
+				Value:    1,
+				Metadata: map[string]string{"error": cr.err()},
+			},
+		}, client.WithAuthToken())
+	}
+
 	return nil
 }
 
-func (e *Endtoend) signup() E2EResult {
+func (e *Endtoend) signupAndRunExamples() E2EResult {
 	e2eRes := E2EResult{}
 	// reset, delete any existing customers. Try this a few times, we sometimes get timeout
 	var delErr error
@@ -531,3 +551,65 @@ func skipValue(d *json.Decoder) error {
 }
 
 var end = errors.New("invalid end of array or object")
+
+type websiteError struct {
+	url string
+	err string
+}
+
+type websiteCheck struct {
+	ok   bool
+	errs []*websiteError
+}
+
+func (e *Endtoend) checkSite() (*websiteCheck, error) {
+	// run some apis
+	pubrsp, err := e.pubSvc.List(context.Background(), &pubpb.ListRequest{}, client.WithAuthToken())
+	if err != nil {
+		return nil, err
+	}
+	ret := &websiteCheck{
+		ok:   false,
+		errs: []*websiteError{},
+	}
+	if len(pubrsp.Apis) == 0 {
+		ret.errs = append(ret.errs, &websiteError{
+			url: "https://m3o.com/explore",
+			err: "No apis returned on site",
+		})
+	}
+	urls := []string{"https://m3o.com/%s", "https://m3o.com/%s/api", "https://m3o.com/%s/console"}
+	for _, api := range pubrsp.Apis {
+		for _, url := range urls {
+			checkurl := fmt.Sprintf(url, api.Name)
+			rsp, err := http.Get(checkurl)
+			if err != nil {
+				log.Errorf("Error retrieving url %s", checkurl)
+				ret.errs = append(ret.errs, &websiteError{
+					url: checkurl,
+					err: err.Error(),
+				})
+				continue
+			}
+			defer rsp.Body.Close()
+			if rsp.StatusCode != 200 {
+				log.Errorf("Error retrieving url %s %s", checkurl, rsp.Status)
+				ret.errs = append(ret.errs, &websiteError{
+					url: checkurl,
+					err: rsp.Status,
+				})
+				continue
+			}
+		}
+	}
+	ret.ok = len(ret.errs) == 0
+	return ret, nil
+}
+
+func (w *websiteCheck) err() string {
+	errs := make([]string, len(w.errs))
+	for i, v := range w.errs {
+		errs[i] = fmt.Sprintf("Error checking url %s: %s", v.url, v.err)
+	}
+	return strings.Join(errs, ". ")
+}
