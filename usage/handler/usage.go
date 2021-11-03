@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	custpb "github.com/m3o/services/customers/proto"
 	m3oauth "github.com/m3o/services/pkg/auth"
+	publicapipb "github.com/m3o/services/publicapi/proto"
 	pb "github.com/m3o/services/usage/proto"
 	"github.com/micro/micro/v3/service"
 	"github.com/micro/micro/v3/service/auth"
@@ -33,148 +34,12 @@ const (
 	counterMonthlyTTL     = 40 * 24 * time.Hour
 )
 
-type counter struct {
-	sync.RWMutex
-	redisClient *redis.Client
-}
-
-func (c *counter) incr(ctx context.Context, userID, path string, delta int64, t time.Time) (int64, error) {
-	t = t.UTC()
-	key := fmt.Sprintf("%s:%s:%s:%s", prefixCounter, userID, t.Format("20060102"), path)
-	pipe := c.redisClient.TxPipeline()
-	incr := pipe.IncrBy(ctx, key, delta)
-	pipe.Expire(ctx, key, counterTTL) // make sure we expire the counters
-	_, err := pipe.Exec(ctx)
-	if err != nil {
-		return 0, err
-	}
-	return incr.Result()
-}
-
-func (c *counter) incrMonthly(ctx context.Context, userID, path string, delta int64, t time.Time) (int64, error) {
-	t = t.UTC()
-	key := fmt.Sprintf("%s:%s:%s:%s", prefixCounter, userID, t.Format("200601"), path)
-	pipe := c.redisClient.TxPipeline()
-	incr := pipe.IncrBy(ctx, key, delta)
-	pipe.Expire(ctx, key, counterMonthlyTTL) // make sure we expire the counters
-	_, err := pipe.Exec(ctx)
-	if err != nil {
-		return 0, err
-	}
-	return incr.Result()
-}
-
-func (c *counter) decr(ctx context.Context, userID, path string, delta int64, t time.Time) (int64, error) {
-	t = t.UTC()
-	key := fmt.Sprintf("%s:%s:%s:%s", prefixCounter, userID, t.Format("20060102"), path)
-	pipe := c.redisClient.TxPipeline()
-	decr := pipe.DecrBy(ctx, key, delta)
-	pipe.Expire(ctx, key, counterTTL) // make sure we expire counters
-	_, err := pipe.Exec(ctx)
-	if err != nil {
-		return 0, err
-	}
-	return decr.Result()
-}
-
-func (c *counter) read(ctx context.Context, userID, path string, t time.Time) (int64, error) {
-	t = t.UTC()
-	ret, err := c.redisClient.Get(ctx, fmt.Sprintf("%s:%s:%s:%s", prefixCounter, userID, t.Format("20060102"), path)).Int64()
-	if err == redis.Nil {
-		return 0, nil
-	}
-	return ret, err
-}
-
-func (c *counter) readMonthly(ctx context.Context, userID, path string, t time.Time) (int64, error) {
-	t = t.UTC()
-	ret, err := c.redisClient.Get(ctx, fmt.Sprintf("%s:%s:%s:%s", prefixCounter, userID, t.Format("200601"), path)).Int64()
-	if err == redis.Nil {
-		return 0, nil
-	}
-	return ret, err
-}
-
-func (c *counter) deleteUser(ctx context.Context, userID string) error {
-	keys, err := c.redisClient.Keys(ctx, fmt.Sprintf("%s:%s:*", prefixCounter, userID)).Result()
-	if err != nil {
-		if err == redis.Nil {
-			return nil
-		}
-		return err
-	}
-	if len(keys) == 0 {
-		return nil
-	}
-	if err := c.redisClient.Del(ctx, keys...).Err(); err != nil && err != redis.Nil {
-		return err
-	}
-
-	return nil
-}
-
-type listEntry struct {
-	Service string
-	Count   int64
-}
-
-func (c *counter) listForUser(userID string, t time.Time) ([]listEntry, error) {
-	ctx := context.Background()
-	keyPrefix := fmt.Sprintf("%s:%s:%s:", prefixCounter, userID, t.Format("20060102"))
-	sc := c.redisClient.Scan(ctx, 0, keyPrefix+"*", 0)
-	if err := sc.Err(); err != nil {
-		return nil, err
-	}
-	iter := sc.Iterator()
-	res := []listEntry{}
-	for {
-		if !iter.Next(ctx) {
-			break
-		}
-		key := iter.Val()
-		i, err := c.redisClient.Get(ctx, key).Int64()
-		if err != nil {
-			return nil, err
-		}
-		res = append(res, listEntry{
-			Service: strings.TrimPrefix(key, keyPrefix),
-			Count:   i,
-		})
-	}
-	return res, iter.Err()
-}
-
-func (c *counter) listMonthliesForUser(userID string, t time.Time) ([]listEntry, error) {
-	ctx := context.Background()
-	keyPrefix := fmt.Sprintf("%s:%s:%s:", prefixCounter, userID, t.Format("200601"))
-	sc := c.redisClient.Scan(ctx, 0, keyPrefix+"*", 0)
-	if err := sc.Err(); err != nil {
-		return nil, err
-	}
-	iter := sc.Iterator()
-	res := []listEntry{}
-	for {
-		if !iter.Next(ctx) {
-			break
-		}
-		key := iter.Val()
-		i, err := c.redisClient.Get(ctx, key).Int64()
-		if err != nil {
-			return nil, err
-		}
-		res = append(res, listEntry{
-			Service: strings.TrimPrefix(key, keyPrefix),
-			Count:   i,
-		})
-	}
-	return res, iter.Err()
-}
-
 type UsageSvc struct {
 	sync.RWMutex
 	c               *counter
 	dbService       dbproto.DbService
 	custService     custpb.CustomersService
+	papiService     publicapipb.PublicapiService
 	rankCache       []*pb.APIRankItem
 	globalRankCache []*pb.APIRankUserItem
 }
@@ -208,6 +73,7 @@ func NewHandler(svc *service.Service, dbService dbproto.DbService) *UsageSvc {
 		dbService:   dbService,
 		rankCache:   []*pb.APIRankItem{},
 		custService: custpb.NewCustomersService("customers", svc.Client()),
+		papiService: publicapipb.NewPublicapiService("publicapi", svc.Client()),
 	}
 	p.RankingCron()
 	go p.consumeEvents()
@@ -572,12 +438,24 @@ func (p *UsageSvc) RankingCron() {
 	if err != nil {
 		return
 	}
+
+	prsp, err := p.papiService.List(context.Background(), &publicapipb.ListRequest{}, client.WithAuthToken())
+	if err != nil {
+		log.Errorf("Error retrieving publicapi list %s", err)
+		return
+	}
+	displayNames := map[string]string{}
+	for _, api := range prsp.Apis {
+		displayNames[api.Name] = api.DisplayName
+	}
+
 	for i, v := range sortSlice {
 		retSlice = append(retSlice, &pb.APIRankItem{
-			ApiName:    v.apiName,
-			Position:   int32(i + 1),
-			TopUsers:   top10s[v.apiName],
-			Popularity: calcPopularity(v.requestCount),
+			ApiName:        v.apiName,
+			Position:       int32(i + 1),
+			TopUsers:       top10s[v.apiName],
+			Popularity:     calcPopularity(v.requestCount),
+			ApiDisplayName: displayNames[v.apiName],
 		})
 	}
 

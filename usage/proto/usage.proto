@@ -82,6 +82,7 @@ message APIRankItem {
 	repeated APIRankUserItem top_users = 3;
 	// popularity is a 1-10 rating of how much usage this API is getting
 	int32 popularity = 4;
+	string api_display_name = 5;
 }
 
 message APIRankUserItem {
