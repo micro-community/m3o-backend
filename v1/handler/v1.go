@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -20,6 +19,7 @@ import (
 	m3oauth "github.com/m3o/services/pkg/auth"
 	"github.com/m3o/services/pkg/events/proto/requests"
 	publicapi "github.com/m3o/services/publicapi/proto"
+	usage "github.com/m3o/services/usage/proto"
 	v1 "github.com/m3o/services/v1/proto"
 	authpb "github.com/micro/micro/v3/proto/auth"
 	"github.com/micro/micro/v3/service"
@@ -38,105 +38,17 @@ import (
 )
 
 const (
-	keyCachePrefix = "v1-service/keycache"
+	keyCachePrefix         = "v1-service/keycache"
+	defaultMonthlyUsageCap = 1000000
 )
 
 type V1 struct {
-	papi         publicapi.PublicapiService
-	accsvc       authpb.AccountsService
-	keyRecCache  *expiringLRUCache
-	pricingCache pricingCache
-	balanceCache balanceCache
-	alerts       alertpb.AlertService
-}
-
-// pricingCache caches the prices for the endpoints so we don't hit the publicapi for every call
-type pricingCache struct {
-	sync.RWMutex
-	prices map[string]int64
-	papi   publicapi.PublicapiService
-}
-
-func (p *pricingCache) getPrice(api, endpoint string) int64 {
-	p.RLock()
-	defer p.RUnlock()
-	return p.prices[strings.ToLower(fmt.Sprintf("%s.%s", api, endpoint))]
-}
-
-func (p *pricingCache) init() error {
-	// load up the cache and periodically refresh
-	load := func() error {
-
-		rsp, err := p.papi.List(context.Background(), &publicapi.ListRequest{}, client.WithAuthToken())
-		if err != nil {
-			logger.Errorf("Failed to load publicapi pricing %s", err)
-			return err
-		}
-		newMap := map[string]int64{}
-		for _, api := range rsp.Apis {
-			for k, v := range api.Pricing {
-				newMap[strings.ToLower(k)] = v
-			}
-		}
-		p.Lock()
-		p.prices = newMap
-		p.Unlock()
-		return nil
-	}
-	if err := load(); err != nil {
-		return err
-	}
-	go func() {
-		for {
-			time.Sleep(10 * time.Minute)
-			load()
-		}
-	}()
-	return nil
-
-}
-
-// balanceCache caches the calls to balance
-type balanceCache struct {
-	balsvc balance.BalanceService
-}
-
-func (b *balanceCache) getBalance(ctx context.Context, userID string) (int64, error) {
-	// TODO caching
-	rsp, err := b.balsvc.Current(ctx, &balance.CurrentRequest{
-		CustomerId: userID,
-	}, client.WithAuthToken())
-	if err != nil {
-		return 0, err
-	}
-	return rsp.CurrentBalance, nil
-}
-
-// expiringLRUCache caches the API key records for faster retrieval rather than hitting the DB for every call
-type expiringLRUCache struct {
-	redisClient *redis.Client
-	ttl         time.Duration
-}
-
-func (c *expiringLRUCache) Add(ctx context.Context, key string, value interface{}) error {
-	val, _ := json.Marshal(value)
-	return c.redisClient.Set(ctx, fmt.Sprintf("%s:%s", keyCachePrefix, key), val, c.ttl).Err()
-}
-
-func (c *expiringLRUCache) Remove(ctx context.Context, key string) error {
-	return c.redisClient.Del(ctx, fmt.Sprintf("%s:%s", keyCachePrefix, key)).Err()
-}
-
-func (c *expiringLRUCache) GetAPIKeyRecord(ctx context.Context, key string) (*apiKeyRecord, error) {
-	b, err := c.redisClient.Get(ctx, fmt.Sprintf("%s:%s", keyCachePrefix, key)).Bytes()
-	if err != nil {
-		return nil, err
-	}
-	var keyRec apiKeyRecord
-	if err := json.Unmarshal(b, &keyRec); err != nil {
-		return nil, err
-	}
-	return &keyRec, nil
+	accsvc         authpb.AccountsService
+	keyRecCache    *expiringLRUCache
+	balanceCache   *balanceCache
+	usageCache     *usageCache
+	publicapiCache *publicapiCache
+	alerts         alertpb.AlertService
 }
 
 const (
@@ -179,25 +91,27 @@ func NewHandler(srv *service.Service) *V1 {
 	})
 	papi := publicapi.NewPublicapiService("publicapi", srv.Client())
 	keyRecCache := expiringLRUCache{redisClient: rc, ttl: lruCacheTTL}
-	priceCache := pricingCache{
-		prices: map[string]int64{},
-		papi:   papi,
+	papiCache := &publicapiCache{
+		apis: map[string]*publicapi.PublicAPI{},
+		papi: papi,
 	}
-	if err := priceCache.init(); err != nil {
-		logger.Fatalf("Failed to init price cache %s", err)
+	if err := papiCache.init(); err != nil {
+		log.Fatalf("Failed to init public API cache %s", err)
 	}
-	v1 := &V1{
-		papi:         papi,
-		accsvc:       authpb.NewAccountsService("auth", srv.Client()),
-		keyRecCache:  &keyRecCache,
-		pricingCache: priceCache,
-		balanceCache: balanceCache{
+	v1api := &V1{
+		accsvc:         authpb.NewAccountsService("auth", srv.Client()),
+		keyRecCache:    &keyRecCache,
+		publicapiCache: papiCache,
+		balanceCache: &balanceCache{
 			balsvc: balance.NewBalanceService("balance", srv.Client()),
+		},
+		usageCache: &usageCache{
+			usagesvc: usage.NewUsageService("usage", srv.Client()),
 		},
 		alerts: alertpb.NewAlertService("alert", srv.Client()),
 	}
-	go v1.consumeEvents()
-	return v1
+	go v1api.consumeEvents()
+	return v1api
 }
 
 func (v1 *V1) writeAPIRecord(ctx context.Context, rec *apiKeyRecord) error {
@@ -337,24 +251,33 @@ func (v1 *V1) readAPIRecordByAPIKey(ctx context.Context, authz string) (string, 
 }
 
 func (v1 *V1) checkPrice(ctx context.Context, reqURL string) (int64, error) {
-	split := strings.Split(strings.TrimPrefix(reqURL, "/v1/"), "/")
-	if len(split) < 2 {
-		return 0, fmt.Errorf("invalid v1 url format")
+	apiName, endpointName, err := urlToComponents(reqURL)
+	if err != nil {
+		return 0, err
 	}
-	apiName := split[0]
-	endpointName := split[1]
-	price := v1.pricingCache.getPrice(apiName, endpointName)
+	price := v1.publicapiCache.getPrice(apiName, endpointName)
 	return price, nil
 }
 
-func (v1 *V1) verifyCallAllowed(ctx context.Context, apiRec *apiKeyRecord, reqURL string) error {
+func urlToComponents(reqURL string) (string, string, error) {
+	split := strings.Split(strings.TrimPrefix(reqURL, "/v1/"), "/")
+	if len(split) < 2 {
+		return "", "", fmt.Errorf("invalid v1 url format")
+	}
+	return split[0], split[1], nil
+}
+
+// verifyCallAllowed checks whether we should allow this request.
+// If OK it returns
+// - the price that should be charged; "free" indicates a free endpoint, "0" indicates a paid endpoint that's using free quota, "[0-9]+" indicates the price
+func (v1 *V1) verifyCallAllowed(ctx context.Context, apiRec *apiKeyRecord, reqURL string) (string, error) {
 	// checks
 	// 1. Has the key been explicitly blocked?
 	// 2. Do the scopes of the token allow them to call the requested API? The name of the scopes correspond to the service
 	// 3. Do we have sufficient money to call this endpoint
 
 	if apiRec.Status == keyStatusBlocked {
-		return errBlocked(apiRec.StatusMessage)
+		return "", errBlocked(apiRec.StatusMessage)
 	}
 
 	scopeGood := false
@@ -371,29 +294,59 @@ func (v1 *V1) verifyCallAllowed(ctx context.Context, apiRec *apiKeyRecord, reqUR
 		}
 	}
 	if !scopeGood {
-		return errBlocked("Insufficient privileges")
+		return "", errBlocked("Insufficient privileges")
 	}
 
 	price, err := v1.checkPrice(ctx, reqURL)
 	if err != nil {
-		return errBlocked(err.Error())
+		return "", errBlocked(err.Error())
+	}
+
+	api, endpoint, err := urlToComponents(reqURL)
+	if err != nil {
+		log.Errorf("Failed to retrieve api name %s", err)
+		// fail open
+		return "free", nil
+	}
+
+	use, err := v1.usageCache.getMonthlyUsageTotal(ctx, apiRec.UserID)
+	if err != nil {
+		log.Errorf("Failed to retrieve usage %s", err)
+		// fail open
+		return "free", nil
 	}
 	if price == 0 {
 		// it's free!!
-		return nil
+		// have we hit our fair use quota for the month?
+		if use["totalfree"] >= defaultMonthlyUsageCap {
+			return "", errBlocked("Monthly usage cap exceeded")
+		}
+		return "free", nil
 	}
-	// check balance
+
+	// have we used our free quota for this particular API?
+	// usage name looks like "cache$Cache.Increment"
+	usageName := fmt.Sprintf("%s$%s.%s", strings.ToLower(api), strings.Title(api), strings.Title(endpoint))
+
+	count := use[usageName]
+	quota := v1.publicapiCache.getQuota(api, endpoint)
+	if count < quota {
+		// still within free quota
+		return "0", nil
+	}
+
+	// no quota left, check balance to see if we can pay for this invocation
 	bal, err := v1.balanceCache.getBalance(ctx, apiRec.UserID)
 	if err != nil {
 		log.Errorf("Failed to retrieve balance for customer %s %s", apiRec.UserID, err)
 		// fail open
-		return nil
+		return fmt.Sprintf("%d", price), nil
 	}
 	if bal >= price {
-		return nil
+		return fmt.Sprintf("%d", price), nil
 	}
 
-	return errBlocked("Insufficient funds")
+	return "", errBlocked("Insufficient funds")
 
 }
 
@@ -499,7 +452,8 @@ func (v1 *V1) Endpoint(ctx context.Context, stream server.Stream) (retErr error)
 		reqURL = u.Path
 	}
 
-	if err := v1.verifyCallAllowed(ctx, apiRec, reqURL); err != nil {
+	price, err := v1.verifyCallAllowed(ctx, apiRec, reqURL)
+	if err != nil {
 		return err
 	}
 
@@ -517,7 +471,7 @@ func (v1 *V1) Endpoint(ctx context.Context, stream server.Stream) (retErr error)
 	}
 
 	if isStream(endpoint, svcs) {
-		return serveStream(ctx, stream, service, endpoint, svcs, apiRec)
+		return serveStream(ctx, stream, service, endpoint, svcs, apiRec, price)
 	}
 
 	// forward the request
@@ -559,7 +513,7 @@ func (v1 *V1) Endpoint(ctx context.Context, stream server.Stream) (retErr error)
 		}
 		return err
 	}
-	go publishEndpointEvent(reqURL, service, endpoint, apiRec)
+	go publishEndpointEvent(reqURL, service, endpoint, apiRec, price)
 
 	stream.Send(response)
 	return nil
@@ -593,7 +547,7 @@ func mergeURLPayload(ctx context.Context, md metadata.Metadata, u *url.URL, payl
 	return json.RawMessage(b)
 }
 
-func publishEndpointEvent(reqURL, apiName, endpointName string, apiRec *apiKeyRecord) {
+func publishEndpointEvent(reqURL, apiName, endpointName string, apiRec *apiKeyRecord, price string) {
 	if err := events.Publish(requests.Topic, requests.Event{
 		Type: requests.EventType_EventTypeRequest,
 		Request: &requests.Request{
@@ -603,19 +557,20 @@ func publishEndpointEvent(reqURL, apiName, endpointName string, apiRec *apiKeyRe
 			Url:          reqURL,
 			ApiName:      apiName,
 			EndpointName: endpointName,
+			Price:        price,
 		}}); err != nil {
 		log.Errorf("Error publishing event %s", err)
 	}
 }
 
 func (v1 *V1) listAPIs() ([]string, error) {
-	rsp, err := v1.papi.List(context.Background(), &publicapi.ListRequest{}, client.WithAuthToken())
+	rsp, err := v1.publicapiCache.list()
 	if err != nil {
 		return nil, err
 	}
 
-	ret := make([]string, len(rsp.Apis))
-	for i, v := range rsp.Apis {
+	ret := make([]string, len(rsp))
+	for i, v := range rsp {
 		ret[i] = v.Name
 	}
 	return ret, nil

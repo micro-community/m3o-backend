@@ -45,6 +45,13 @@ func (p *UsageSvc) processV1apiEvents(ev mevents.Event) error {
 func (p *UsageSvc) processRequest(ctx context.Context, event *requests.Request, t time.Time) error {
 	_, err := p.c.incr(ctx, event.UserId, event.ApiName, 1, t)
 	p.c.incr(ctx, event.UserId, fmt.Sprintf("%s$%s", event.ApiName, event.EndpointName), 1, t)
+	// monthly totals power monthly quotas
+	p.c.incrMonthly(ctx, event.UserId, fmt.Sprintf("%s$%s", event.ApiName, event.EndpointName), 1, t)
+	if event.Price == "free" {
+		// "totalfree" is the total of all calls to free endpoints (i.e. not paid). Powers a monthly usage cap
+		p.c.incrMonthly(ctx, event.UserId, "totalfree", 1, t)
+	}
+	p.c.incrMonthly(ctx, event.UserId, "total", 1, t)
 	// incr total counts for the API and individual endpoint
 	p.c.incr(ctx, totalID, event.ApiName, 1, t)
 	p.c.incr(ctx, totalID, fmt.Sprintf("%s$%s", event.ApiName, event.EndpointName), 1, t)

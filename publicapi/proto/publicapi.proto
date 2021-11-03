@@ -28,6 +28,7 @@ message PublicAPI {
 	string icon = 10;
 	string postman_json = 11;
 	string display_name = 12;
+	map<string, int64> quotas = 13; // map of endpoints to monthly free request quota. After quota is exhausted endpoint becomes paid
 }
 
 message PublishResponse {

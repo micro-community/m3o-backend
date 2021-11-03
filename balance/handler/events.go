@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 
 	pevents "github.com/m3o/services/pkg/events"
 	eventspb "github.com/m3o/services/pkg/events/proto/customers"
@@ -43,20 +44,14 @@ func (b *Balance) processV1apiEvents(ev mevents.Event) error {
 }
 
 func (b *Balance) processRequest(ctx context.Context, rqe *requests.Request) error {
-	apiName := rqe.ApiName
-	rsp, err := b.pubSvc.get(ctx, apiName)
+	// rqe.Price should be either "free" or a valid number
+	price, err := strconv.Atoi(rqe.Price)
 	if err != nil {
-		logger.Errorf("Error looking up API %s", err)
-		return err
-	}
-
-	methodName := rqe.EndpointName
-	price, ok := rsp.Pricing[methodName]
-	if !ok || price == 0 {
 		return nil
 	}
+
 	// decrement the balance
-	currBal, err := b.c.decr(ctx, rqe.UserId, "$balance$", price)
+	currBal, err := b.c.decr(ctx, rqe.UserId, "$balance$", int64(price))
 	if err != nil {
 		return err
 	}

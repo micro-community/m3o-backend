@@ -35,6 +35,7 @@ type APIEntry struct {
 	Icon         string
 	PostmanJSON  string
 	DisplayName  string
+	Quotas       map[string]int64 // mapping endpoints to their free quotas
 }
 
 type Publicapi struct {
@@ -81,6 +82,7 @@ func (p *Publicapi) Publish(ctx context.Context, request *pb.PublishRequest, res
 		Icon:         request.Api.Icon,
 		PostmanJSON:  request.Api.PostmanJson,
 		DisplayName:  request.Api.DisplayName,
+		Quotas:       request.Api.Quotas,
 	}
 
 	if err := p.updateEntry(ctx, ae); err != nil {
@@ -310,6 +312,9 @@ func (p *Publicapi) Update(ctx context.Context, request *pb.UpdateRequest, respo
 	if len(request.Api.PostmanJson) > 0 {
 		ae.PostmanJSON = request.Api.PostmanJson
 	}
+	if len(request.Api.Quotas) > 0 {
+		ae.Quotas = request.Api.Quotas
+	}
 
 	if err := p.updateEntry(ctx, &ae); err != nil {
 		log.Errorf("Error updating entry %s", err)
@@ -332,6 +337,7 @@ func marshal(ae *APIEntry) *pb.PublicAPI {
 		Icon:         ae.Icon,
 		PostmanJson:  ae.PostmanJSON,
 		DisplayName:  ae.DisplayName,
+		Quotas:       ae.Quotas,
 	}
 	// hack while we transition to everything having a display name
 	if ret.DisplayName == "" {

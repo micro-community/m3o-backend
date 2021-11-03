@@ -12,6 +12,7 @@ service Usage {
 	rpc SaveEvent(SaveEventRequest) returns (SaveEventResponse) {}
 	rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {}
 	rpc ListAPIRanks(ListAPIRanksRequest) returns (ListAPIRanksResponse) {}
+	rpc ReadMonthlyTotal(ReadMonthlyTotalRequest) returns (ReadMonthlyTotalResponse) {}
 }
 
 message ReadRequest {
@@ -86,4 +87,14 @@ message APIRankItem {
 message APIRankUserItem {
 	string user_name = 1;
 	int32 position = 2;
+}
+
+message ReadMonthlyTotalRequest {
+	string customer_id = 1;
+	bool detail = 2; // do we want the endpoint breakdown
+}
+
+message ReadMonthlyTotalResponse {
+	int64 requests = 1; // total requests in the month
+ 	map<string, int64> endpoint_requests = 2; // requests for each endpoint in the month
 }

@@ -18,7 +18,6 @@ import (
 	stripe "github.com/m3o/services/stripe/proto"
 	v1 "github.com/m3o/services/v1/proto"
 	"github.com/micro/micro/v3/service"
-	"github.com/micro/micro/v3/service/client"
 	"github.com/micro/micro/v3/service/config"
 	"github.com/micro/micro/v3/service/errors"
 	"github.com/micro/micro/v3/service/events"
@@ -80,13 +79,6 @@ type publicAPICacheEntry struct {
 	created time.Time
 }
 
-type publicAPICache struct {
-	sync.RWMutex
-	cache  map[string]*publicAPICacheEntry
-	pubSvc publicapi.PublicapiService
-	ttl    time.Duration
-}
-
 // Adjustment represents a balance adjustment (not including normal API usage). e.g. funds being added, promo codes, manual adjustment for customer service etc
 type Adjustment struct {
 	ID         string
@@ -99,28 +91,9 @@ type Adjustment struct {
 	Meta       map[string]string
 }
 
-func (p *publicAPICache) get(ctx context.Context, name string) (*publicapi.PublicAPI, error) {
-	// check the cache
-	p.RLock()
-	cached := p.cache[name]
-	p.RUnlock()
-	if cached != nil && cached.created.Add(p.ttl).After(time.Now()) {
-		return cached.api, nil
-	}
-	rsp, err := p.pubSvc.Get(ctx, &publicapi.GetRequest{Name: name}, client.WithAuthToken())
-	if err != nil {
-		return nil, err
-	}
-	p.Lock()
-	p.cache[name] = &publicAPICacheEntry{api: rsp.Api, created: time.Now()}
-	p.Unlock()
-	return rsp.Api, nil
-}
-
 type Balance struct {
 	c         *counter // counts the balance. Balance is expressed in 1/10,000ths of a cent which allows us to price in fractions e.g. a request costs 0.0001 cents or 10,000 requests for 1 cent
 	v1Svc     v1.V1Service
-	pubSvc    *publicAPICache
 	stripeSvc stripe.StripeService
 }
 
@@ -149,13 +122,8 @@ func NewHandler(svc *service.Service) *Balance {
 		},
 	})
 	b := &Balance{
-		c:     &counter{redisClient: rc},
-		v1Svc: v1.NewV1Service("v1", svc.Client()),
-		pubSvc: &publicAPICache{
-			pubSvc: publicapi.NewPublicapiService("publicapi", svc.Client()),
-			cache:  map[string]*publicAPICacheEntry{},
-			ttl:    5 * time.Minute,
-		},
+		c:         &counter{redisClient: rc},
+		v1Svc:     v1.NewV1Service("v1", svc.Client()),
 		stripeSvc: stripe.NewStripeService("stripe", svc.Client()),
 	}
 	go b.consumeEvents()

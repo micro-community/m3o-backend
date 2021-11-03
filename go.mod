@@ -15,7 +15,6 @@ require (
 	github.com/onsi/gomega v1.10.5
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/sethvargo/go-diceware v0.2.0
 	github.com/slack-go/slack v0.6.5
 	github.com/stripe/stripe-go/v71 v71.28.0
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d

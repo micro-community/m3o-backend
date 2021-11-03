@@ -21,6 +21,7 @@ message Request {
   string url = 4;
   string api_name = 5;
   string endpoint_name = 6;
+  string price = 7; // how much this request has cost. "free" is a free endpoint. "0" is a paid endpoint that is using free quota
 }
 
 

@@ -38,14 +38,14 @@ type rawFrame struct {
 	Data []byte
 }
 
-func serveStream(ctx context.Context, stream server.Stream, service, endpoint string, svcs []*registry.Service, apiRec *apiKeyRecord) error {
+func serveStream(ctx context.Context, stream server.Stream, service, endpoint string, svcs []*registry.Service, apiRec *apiKeyRecord, price string) error {
 	// serve as websocket if thats the case
 	md, ok := metadata.FromContext(ctx)
 	if !ok {
 		return errInternal
 	}
 	if isWebSocket(md) {
-		return serveWebsocket(ctx, stream, service, endpoint, svcs, apiRec)
+		return serveWebsocket(ctx, stream, service, endpoint, svcs, apiRec, price)
 	}
 
 	// otherwise serve the stream as http long poll
@@ -97,7 +97,7 @@ func serveStream(ctx context.Context, stream server.Stream, service, endpoint st
 
 	reqURL, _ := md.Get("url")
 	// http long poll
-	publishEndpointEvent(reqURL, service, endpoint, apiRec)
+	publishEndpointEvent(reqURL, service, endpoint, apiRec, price)
 
 	rsp := downStream.Response()
 
@@ -135,7 +135,7 @@ func serveStream(ctx context.Context, stream server.Stream, service, endpoint st
 }
 
 // serveWebsocket will stream rpc back over websockets assuming json
-func serveWebsocket(ctx context.Context, serverStream server.Stream, service, endpoint string, svcs []*registry.Service, apiRec *apiKeyRecord) error {
+func serveWebsocket(ctx context.Context, serverStream server.Stream, service, endpoint string, svcs []*registry.Service, apiRec *apiKeyRecord, price string) error {
 	md, ok := metadata.FromContext(ctx)
 	if !ok {
 		return errors.InternalServerError("v1", "Error processing request")
@@ -174,6 +174,7 @@ func serveWebsocket(ctx context.Context, serverStream server.Stream, service, en
 		apiRec:       apiRec,
 		service:      service,
 		endpoint:     endpoint,
+		price:        price,
 	}
 	s.processWSReadsAndWrites()
 	return nil
@@ -194,6 +195,7 @@ type stream struct {
 
 	service  string
 	endpoint string
+	price    string
 }
 
 func (s *stream) processWSReadsAndWrites() {
@@ -301,7 +303,7 @@ func (s *stream) clientToServerLoop(cancel context.CancelFunc, wg *sync.WaitGrou
 			logger.Error(err)
 			return
 		}
-		publishEndpointEvent(reqURL, s.service, s.endpoint, s.apiRec)
+		publishEndpointEvent(reqURL, s.service, s.endpoint, s.apiRec, s.price)
 	}
 }
 

@@ -30,6 +30,7 @@ const (
 	prefixCounter         = "usage-service/counter"
 	prefixUsageByCustomer = "usageByCustomer" // customer ID / date
 	counterTTL            = 48 * time.Hour
+	counterMonthlyTTL     = 40 * 24 * time.Hour
 )
 
 type counter struct {
@@ -43,6 +44,19 @@ func (c *counter) incr(ctx context.Context, userID, path string, delta int64, t 
 	pipe := c.redisClient.TxPipeline()
 	incr := pipe.IncrBy(ctx, key, delta)
 	pipe.Expire(ctx, key, counterTTL) // make sure we expire the counters
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return incr.Result()
+}
+
+func (c *counter) incrMonthly(ctx context.Context, userID, path string, delta int64, t time.Time) (int64, error) {
+	t = t.UTC()
+	key := fmt.Sprintf("%s:%s:%s:%s", prefixCounter, userID, t.Format("200601"), path)
+	pipe := c.redisClient.TxPipeline()
+	incr := pipe.IncrBy(ctx, key, delta)
+	pipe.Expire(ctx, key, counterMonthlyTTL) // make sure we expire the counters
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		return 0, err
@@ -66,6 +80,15 @@ func (c *counter) decr(ctx context.Context, userID, path string, delta int64, t 
 func (c *counter) read(ctx context.Context, userID, path string, t time.Time) (int64, error) {
 	t = t.UTC()
 	ret, err := c.redisClient.Get(ctx, fmt.Sprintf("%s:%s:%s:%s", prefixCounter, userID, t.Format("20060102"), path)).Int64()
+	if err == redis.Nil {
+		return 0, nil
+	}
+	return ret, err
+}
+
+func (c *counter) readMonthly(ctx context.Context, userID, path string, t time.Time) (int64, error) {
+	t = t.UTC()
+	ret, err := c.redisClient.Get(ctx, fmt.Sprintf("%s:%s:%s:%s", prefixCounter, userID, t.Format("200601"), path)).Int64()
 	if err == redis.Nil {
 		return 0, nil
 	}
@@ -98,6 +121,32 @@ type listEntry struct {
 func (c *counter) listForUser(userID string, t time.Time) ([]listEntry, error) {
 	ctx := context.Background()
 	keyPrefix := fmt.Sprintf("%s:%s:%s:", prefixCounter, userID, t.Format("20060102"))
+	sc := c.redisClient.Scan(ctx, 0, keyPrefix+"*", 0)
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	iter := sc.Iterator()
+	res := []listEntry{}
+	for {
+		if !iter.Next(ctx) {
+			break
+		}
+		key := iter.Val()
+		i, err := c.redisClient.Get(ctx, key).Int64()
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, listEntry{
+			Service: strings.TrimPrefix(key, keyPrefix),
+			Count:   i,
+		})
+	}
+	return res, iter.Err()
+}
+
+func (c *counter) listMonthliesForUser(userID string, t time.Time) ([]listEntry, error) {
+	ctx := context.Background()
+	keyPrefix := fmt.Sprintf("%s:%s:%s:", prefixCounter, userID, t.Format("200601"))
 	sc := c.redisClient.Scan(ctx, 0, keyPrefix+"*", 0)
 	if err := sc.Err(); err != nil {
 		return nil, err
@@ -215,6 +264,9 @@ func (p *UsageSvc) Read(ctx context.Context, request *pb.ReadRequest, response *
 	// add to slices
 	for _, rec := range recs {
 		date := strings.TrimPrefix(rec.Key, keyPrefix)
+		if len(date) != 8 {
+			continue
+		}
 		dateObj, err := time.Parse("20060102", date)
 		if err != nil {
 			log.Errorf("Error parsing date obj %s", err)
@@ -571,6 +623,10 @@ func (p *UsageSvc) calcTop10s() (map[string][]*pb.APIRankUserItem, []*pb.APIRank
 			continue
 		}
 		date := strings.TrimPrefix(rec.Key, fmt.Sprintf("%s/%s/", prefixUsageByCustomer, userID))
+		if len(date) != 8 {
+			// skip anything that isn't a daily total
+			continue
+		}
 		dateObj, err := time.Parse("20060102", date)
 		if err != nil {
 			log.Errorf("Error parsing date obj %s", err)
@@ -691,4 +747,41 @@ func (p *UsageSvc) getUserName(ctx context.Context, id string, cache map[string]
 		cache[id] = name
 	}
 	return name, nil
+}
+
+func (p *UsageSvc) ReadMonthlyTotal(ctx context.Context, request *pb.ReadMonthlyTotalRequest, response *pb.ReadMonthlyTotalResponse) error {
+	acc, ok := auth.AccountFromContext(ctx)
+	if !ok {
+		return errors.Unauthorized("usage.ReadMonthlyTotal", "Unauthorized")
+	}
+	if len(request.CustomerId) == 0 {
+		request.CustomerId = acc.ID
+	}
+	if acc.ID != request.CustomerId {
+		_, err := m3oauth.VerifyMicroAdmin(ctx, "usage.ReadMonthlyTotal")
+		if err != nil {
+			return err
+		}
+	}
+
+	count, err := p.c.readMonthly(ctx, request.CustomerId, "total", time.Now())
+	if err != nil {
+		log.Errorf("Error reading usage %s", err)
+		return errors.InternalServerError("usage.ReadMonthly", "Error reading usage")
+	}
+	response.Requests = count
+
+	if request.Detail {
+		usage, err := p.c.listMonthliesForUser(request.CustomerId, time.Now())
+		if err != nil {
+			log.Errorf("Error reading usage %s", err)
+			return errors.InternalServerError("usage.ReadMonthly", "Error reading usage")
+		}
+		ret := map[string]int64{}
+		for _, le := range usage {
+			ret[le.Service] = le.Count
+		}
+		response.EndpointRequests = ret
+	}
+	return nil
 }

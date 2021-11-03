@@ -73,6 +73,7 @@ message PricingItem {
 	map<string, int64> pricing = 3; // map of endpoints to price. Unit is 1/10,000ths of a cent which allows us to price in fractions e.g. a request costs 0.0001 cents or 10000 requests for 1 cent
 	string display_name = 4;
 	string icon = 5;
+	map<string, int64> quotas = 6; // map of endpoints to free quota. After quota is exhausted endpoint becomes paid
 }
 
 message PricingResponse {
