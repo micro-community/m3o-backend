@@ -39,6 +39,7 @@ type apiKeyRecord struct {
 	Created       int64     `json:"created"`       // creation time
 	Status        keyStatus `json:"status"`        // status of the key
 	StatusMessage string    `json:"statusMessage"` // message to go with the status updated, presented to users
+	LastSeen      int64     `json:"lastSeen"`      // last time this key was used successfully
 }
 
 // GenerateKey generates an API key
@@ -148,6 +149,7 @@ func (v1 *V1) ListKeys(ctx context.Context, req *pb.ListRequest, rsp *pb.ListRes
 			Description: apiRec.Description,
 			CreatedTime: apiRec.Created,
 			Scopes:      apiRec.Scopes,
+			LastSeen:    apiRec.LastSeen,
 		}
 	}
 	return nil

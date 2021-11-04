@@ -3,15 +3,19 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"strings"
+	"time"
 
 	pevents "github.com/m3o/services/pkg/events"
 	eventspb "github.com/m3o/services/pkg/events/proto/customers"
+	requestspb "github.com/m3o/services/pkg/events/proto/requests"
 	mevents "github.com/micro/micro/v3/service/events"
 	"github.com/micro/micro/v3/service/logger"
 )
 
 func (v1 *V1) consumeEvents() {
 	go pevents.ProcessTopic(eventspb.Topic, "v1api", v1.processCustomerEvents)
+	go pevents.ProcessTopic(requestspb.Topic, "v1api", v1.processRequestEvents)
 }
 
 func (v1 *V1) processCustomerEvents(ev mevents.Event) error {
@@ -51,10 +55,46 @@ func (v1 *V1) processCustomerDelete(ctx context.Context, event *eventspb.Event) 
 func (v1 *V1) processCustomerBan(ctx context.Context, event *eventspb.Event) error {
 	// disable all their keys
 	return v1.updateKeyStatus(ctx, "v1.ban", "micro", event.Customer.Id, "", keyStatusBlocked, "User has been banned")
-
 }
 
 func (v1 *V1) processCustomerUnban(ctx context.Context, event *eventspb.Event) error {
 	return v1.updateKeyStatus(ctx, "v1.unban", "micro", event.Customer.Id, "", keyStatusActive, "")
 
+}
+
+func (v1 *V1) processRequestEvents(ev mevents.Event) error {
+	ctx := context.Background()
+	ce := &requestspb.Event{}
+	if err := json.Unmarshal(ev.Payload, ce); err != nil {
+		logger.Errorf("Error unmarshalling request event: $s", err)
+		return nil
+	}
+	switch ce.Type {
+	case requestspb.EventType_EventTypeRequest:
+		if err := v1.processRequestEvent(ctx, ce, ev.Timestamp); err != nil {
+			logger.Errorf("Error processing customer delete event %s", err)
+			return err
+		}
+	default:
+	}
+	return nil
+}
+
+func (v1 *V1) processRequestEvent(ctx context.Context, event *requestspb.Event, evTime time.Time) error {
+	req := event.Request
+	rec, err := readAPIRecordByKeyID(req.Namespace, req.UserId, req.ApiKeyId)
+	if err != nil {
+		logger.Errorf("Error retrieving key %s", err)
+		if strings.Contains(err.Error(), "not found") {
+			logger.Warnf("Skipping unknown key %v", event)
+			return nil
+		}
+		return err
+	}
+	if rec.LastSeen > evTime.Unix() {
+		// skip
+		return nil
+	}
+	rec.LastSeen = evTime.Unix()
+	return v1.writeAPIRecord(ctx, rec)
 }
