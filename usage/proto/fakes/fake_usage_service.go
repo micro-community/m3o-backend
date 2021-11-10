@@ -70,6 +70,21 @@ type FakeUsageService struct {
 		result1 *usage.ReadResponse
 		result2 error
 	}
+	ReadMonthlyStub        func(context.Context, *usage.ReadMonthlyRequest, ...client.CallOption) (*usage.ReadMonthlyResponse, error)
+	readMonthlyMutex       sync.RWMutex
+	readMonthlyArgsForCall []struct {
+		arg1 context.Context
+		arg2 *usage.ReadMonthlyRequest
+		arg3 []client.CallOption
+	}
+	readMonthlyReturns struct {
+		result1 *usage.ReadMonthlyResponse
+		result2 error
+	}
+	readMonthlyReturnsOnCall map[int]struct {
+		result1 *usage.ReadMonthlyResponse
+		result2 error
+	}
 	ReadMonthlyTotalStub        func(context.Context, *usage.ReadMonthlyTotalRequest, ...client.CallOption) (*usage.ReadMonthlyTotalResponse, error)
 	readMonthlyTotalMutex       sync.RWMutex
 	readMonthlyTotalArgsForCall []struct {
@@ -383,6 +398,72 @@ func (fake *FakeUsageService) ReadReturnsOnCall(i int, result1 *usage.ReadRespon
 	}{result1, result2}
 }
 
+func (fake *FakeUsageService) ReadMonthly(arg1 context.Context, arg2 *usage.ReadMonthlyRequest, arg3 ...client.CallOption) (*usage.ReadMonthlyResponse, error) {
+	fake.readMonthlyMutex.Lock()
+	ret, specificReturn := fake.readMonthlyReturnsOnCall[len(fake.readMonthlyArgsForCall)]
+	fake.readMonthlyArgsForCall = append(fake.readMonthlyArgsForCall, struct {
+		arg1 context.Context
+		arg2 *usage.ReadMonthlyRequest
+		arg3 []client.CallOption
+	}{arg1, arg2, arg3})
+	stub := fake.ReadMonthlyStub
+	fakeReturns := fake.readMonthlyReturns
+	fake.recordInvocation("ReadMonthly", []interface{}{arg1, arg2, arg3})
+	fake.readMonthlyMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3...)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeUsageService) ReadMonthlyCallCount() int {
+	fake.readMonthlyMutex.RLock()
+	defer fake.readMonthlyMutex.RUnlock()
+	return len(fake.readMonthlyArgsForCall)
+}
+
+func (fake *FakeUsageService) ReadMonthlyCalls(stub func(context.Context, *usage.ReadMonthlyRequest, ...client.CallOption) (*usage.ReadMonthlyResponse, error)) {
+	fake.readMonthlyMutex.Lock()
+	defer fake.readMonthlyMutex.Unlock()
+	fake.ReadMonthlyStub = stub
+}
+
+func (fake *FakeUsageService) ReadMonthlyArgsForCall(i int) (context.Context, *usage.ReadMonthlyRequest, []client.CallOption) {
+	fake.readMonthlyMutex.RLock()
+	defer fake.readMonthlyMutex.RUnlock()
+	argsForCall := fake.readMonthlyArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeUsageService) ReadMonthlyReturns(result1 *usage.ReadMonthlyResponse, result2 error) {
+	fake.readMonthlyMutex.Lock()
+	defer fake.readMonthlyMutex.Unlock()
+	fake.ReadMonthlyStub = nil
+	fake.readMonthlyReturns = struct {
+		result1 *usage.ReadMonthlyResponse
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeUsageService) ReadMonthlyReturnsOnCall(i int, result1 *usage.ReadMonthlyResponse, result2 error) {
+	fake.readMonthlyMutex.Lock()
+	defer fake.readMonthlyMutex.Unlock()
+	fake.ReadMonthlyStub = nil
+	if fake.readMonthlyReturnsOnCall == nil {
+		fake.readMonthlyReturnsOnCall = make(map[int]struct {
+			result1 *usage.ReadMonthlyResponse
+			result2 error
+		})
+	}
+	fake.readMonthlyReturnsOnCall[i] = struct {
+		result1 *usage.ReadMonthlyResponse
+		result2 error
+	}{result1, result2}
+}
+
 func (fake *FakeUsageService) ReadMonthlyTotal(arg1 context.Context, arg2 *usage.ReadMonthlyTotalRequest, arg3 ...client.CallOption) (*usage.ReadMonthlyTotalResponse, error) {
 	fake.readMonthlyTotalMutex.Lock()
 	ret, specificReturn := fake.readMonthlyTotalReturnsOnCall[len(fake.readMonthlyTotalArgsForCall)]
@@ -592,6 +673,8 @@ func (fake *FakeUsageService) Invocations() map[string][][]interface{} {
 	defer fake.listEventsMutex.RUnlock()
 	fake.readMutex.RLock()
 	defer fake.readMutex.RUnlock()
+	fake.readMonthlyMutex.RLock()
+	defer fake.readMonthlyMutex.RUnlock()
 	fake.readMonthlyTotalMutex.RLock()
 	defer fake.readMonthlyTotalMutex.RUnlock()
 	fake.saveEventMutex.RLock()

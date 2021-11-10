@@ -251,20 +251,12 @@ func (v1 *V1) readAPIRecordByAPIKey(ctx context.Context, authz string) (string, 
 }
 
 func (v1 *V1) checkPrice(ctx context.Context, reqURL string) (int64, error) {
-	apiName, endpointName, err := urlToComponents(reqURL)
+	apiName, endpointName, err := getApiEndpointFromURL(reqURL)
 	if err != nil {
 		return 0, err
 	}
 	price := v1.publicapiCache.getPrice(apiName, endpointName)
 	return price, nil
-}
-
-func urlToComponents(reqURL string) (string, string, error) {
-	split := strings.Split(strings.TrimPrefix(reqURL, "/v1/"), "/")
-	if len(split) < 2 {
-		return "", "", fmt.Errorf("invalid v1 url format")
-	}
-	return split[0], split[1], nil
 }
 
 // verifyCallAllowed checks whether we should allow this request.
@@ -302,14 +294,9 @@ func (v1 *V1) verifyCallAllowed(ctx context.Context, apiRec *apiKeyRecord, reqUR
 		return "", errBlocked(err.Error())
 	}
 
-	api, endpoint, err := urlToComponents(reqURL)
-	if err != nil {
-		log.Errorf("Failed to retrieve api name %s", err)
-		// fail open
-		return "free", nil
-	}
+	service, endpoint, err := getApiEndpointFromURL(reqURL)
 
-	use, err := v1.usageCache.getMonthlyUsageTotal(ctx, apiRec.UserID)
+	use, err := v1.usageCache.getMonthlyUsageTotal(ctx, apiRec.UserID, service, endpoint)
 	if err != nil {
 		log.Errorf("Failed to retrieve usage %s", err)
 		// fail open
@@ -326,10 +313,10 @@ func (v1 *V1) verifyCallAllowed(ctx context.Context, apiRec *apiKeyRecord, reqUR
 
 	// have we used our free quota for this particular API?
 	// usage name looks like "cache$Cache.Increment"
-	usageName := fmt.Sprintf("%s$%s.%s", strings.ToLower(api), strings.Title(api), strings.Title(endpoint))
+	usageName := fmt.Sprintf("%s$%s", service, endpoint)
 
 	count := use[usageName]
-	quota := v1.publicapiCache.getQuota(api, endpoint)
+	quota := v1.publicapiCache.getQuota(service, endpoint)
 	if count < quota {
 		// still within free quota
 		return "0", nil
@@ -386,14 +373,10 @@ func (v1 *V1) refreshToken(ctx context.Context, apiRec *apiKeyRecord, key string
 }
 
 func (v1 *V1) getRequestedService(reqURL string) (string, string, []*registry.Service, error) {
-	trimmedPath := strings.TrimPrefix(reqURL, "/v1/")
-	parts := strings.Split(trimmedPath, "/")
-	if len(parts) < 2 {
-		// can't work out service and method
-		return "", "", nil, errors.NotFound("v1", "")
+	service, endpoint, err := getApiEndpointFromURL(reqURL)
+	if err != nil {
+		return "", "", nil, err
 	}
-
-	service := parts[0]
 	svcs, err := registry.GetService(service)
 	if err != nil {
 		if err == registry.ErrNotFound {
@@ -402,6 +385,21 @@ func (v1 *V1) getRequestedService(reqURL string) (string, string, []*registry.Se
 		log.Errorf("Error looking up service %s", err)
 		return "", "", nil, errInternal
 	}
+
+	return service, endpoint, svcs, nil
+}
+
+// getAPIEndpointFromURL returns the api and endpoint name from a given URL.
+// e.g. /v1/helloworld/call -> helloworld Helloworld.Call
+func getApiEndpointFromURL(reqURL string) (string, string, error) {
+	trimmedPath := strings.TrimPrefix(reqURL, "/v1/")
+	parts := strings.Split(trimmedPath, "/")
+	if len(parts) < 2 {
+		// can't work out service and method
+		return "", "", errors.NotFound("v1", "")
+	}
+
+	service := parts[0]
 	endpoint := ""
 	if len(parts) == 2 {
 		// /v1/helloworld/call -> helloworld Helloworld.Call
@@ -411,7 +409,7 @@ func (v1 *V1) getRequestedService(reqURL string) (string, string, []*registry.Se
 		endpoint = fmt.Sprintf("%s.%s", strings.Title(parts[1]), strings.Title(parts[2]))
 	}
 
-	return service, endpoint, svcs, nil
+	return service, endpoint, nil
 }
 
 func parseContentType(ct string) string {

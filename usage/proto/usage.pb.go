@@ -985,6 +985,108 @@ func (x *ReadMonthlyTotalResponse) GetEndpointRequests() map[string]int64 {
 	return nil
 }
 
+type ReadMonthlyRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	CustomerId string   `protobuf:"bytes,1,opt,name=customer_id,json=customerId,proto3" json:"customer_id,omitempty"`
+	Endpoints  []string `protobuf:"bytes,2,rep,name=endpoints,proto3" json:"endpoints,omitempty"`
+}
+
+func (x *ReadMonthlyRequest) Reset() {
+	*x = ReadMonthlyRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_usage_proto_msgTypes[19]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ReadMonthlyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadMonthlyRequest) ProtoMessage() {}
+
+func (x *ReadMonthlyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_usage_proto_msgTypes[19]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadMonthlyRequest.ProtoReflect.Descriptor instead.
+func (*ReadMonthlyRequest) Descriptor() ([]byte, []int) {
+	return file_proto_usage_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ReadMonthlyRequest) GetCustomerId() string {
+	if x != nil {
+		return x.CustomerId
+	}
+	return ""
+}
+
+func (x *ReadMonthlyRequest) GetEndpoints() []string {
+	if x != nil {
+		return x.Endpoints
+	}
+	return nil
+}
+
+type ReadMonthlyResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Requests map[string]int64 `protobuf:"bytes,1,rep,name=requests,proto3" json:"requests,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"varint,2,opt,name=value,proto3"`
+}
+
+func (x *ReadMonthlyResponse) Reset() {
+	*x = ReadMonthlyResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_usage_proto_msgTypes[20]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ReadMonthlyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadMonthlyResponse) ProtoMessage() {}
+
+func (x *ReadMonthlyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_usage_proto_msgTypes[20]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadMonthlyResponse.ProtoReflect.Descriptor instead.
+func (*ReadMonthlyResponse) Descriptor() ([]byte, []int) {
+	return file_proto_usage_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ReadMonthlyResponse) GetRequests() map[string]int64 {
+	if x != nil {
+		return x.Requests
+	}
+	return nil
+}
+
 var File_proto_usage_proto protoreflect.FileDescriptor
 
 var file_proto_usage_proto_rawDesc = []byte{
@@ -1086,7 +1188,22 @@ var file_proto_usage_proto_rawDesc = []byte{
 	0x73, 0x74, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18,
 	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x61,
 	0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x03, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65,
-	0x3a, 0x02, 0x38, 0x01, 0x32, 0xea, 0x03, 0x0a, 0x05, 0x55, 0x73, 0x61, 0x67, 0x65, 0x12, 0x31,
+	0x3a, 0x02, 0x38, 0x01, 0x22, 0x53, 0x0a, 0x12, 0x52, 0x65, 0x61, 0x64, 0x4d, 0x6f, 0x6e, 0x74,
+	0x68, 0x6c, 0x79, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x1f, 0x0a, 0x0b, 0x63, 0x75,
+	0x73, 0x74, 0x6f, 0x6d, 0x65, 0x72, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x0a, 0x63, 0x75, 0x73, 0x74, 0x6f, 0x6d, 0x65, 0x72, 0x49, 0x64, 0x12, 0x1c, 0x0a, 0x09, 0x65,
+	0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28, 0x09, 0x52, 0x09,
+	0x65, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x73, 0x22, 0x98, 0x01, 0x0a, 0x13, 0x52, 0x65,
+	0x61, 0x64, 0x4d, 0x6f, 0x6e, 0x74, 0x68, 0x6c, 0x79, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
+	0x65, 0x12, 0x44, 0x0a, 0x08, 0x72, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x73, 0x18, 0x01, 0x20,
+	0x03, 0x28, 0x0b, 0x32, 0x28, 0x2e, 0x75, 0x73, 0x61, 0x67, 0x65, 0x2e, 0x52, 0x65, 0x61, 0x64,
+	0x4d, 0x6f, 0x6e, 0x74, 0x68, 0x6c, 0x79, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x2e,
+	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x52, 0x08, 0x72,
+	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x73, 0x1a, 0x3b, 0x0a, 0x0d, 0x52, 0x65, 0x71, 0x75, 0x65,
+	0x73, 0x74, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x61,
+	0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x03, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65,
+	0x3a, 0x02, 0x38, 0x01, 0x32, 0xb2, 0x04, 0x0a, 0x05, 0x55, 0x73, 0x61, 0x67, 0x65, 0x12, 0x31,
 	0x0a, 0x04, 0x52, 0x65, 0x61, 0x64, 0x12, 0x12, 0x2e, 0x75, 0x73, 0x61, 0x67, 0x65, 0x2e, 0x52,
 	0x65, 0x61, 0x64, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x13, 0x2e, 0x75, 0x73, 0x61,
 	0x67, 0x65, 0x2e, 0x52, 0x65, 0x61, 0x64, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22,
@@ -1117,8 +1234,13 @@ var file_proto_usage_proto_rawDesc = []byte{
 	0x6c, 0x79, 0x54, 0x6f, 0x74, 0x61, 0x6c, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1f,
 	0x2e, 0x75, 0x73, 0x61, 0x67, 0x65, 0x2e, 0x52, 0x65, 0x61, 0x64, 0x4d, 0x6f, 0x6e, 0x74, 0x68,
 	0x6c, 0x79, 0x54, 0x6f, 0x74, 0x61, 0x6c, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22,
-	0x00, 0x42, 0x0f, 0x5a, 0x0d, 0x2e, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x3b, 0x75, 0x73, 0x61,
-	0x67, 0x65, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x00, 0x12, 0x46, 0x0a, 0x0b, 0x52, 0x65, 0x61, 0x64, 0x4d, 0x6f, 0x6e, 0x74, 0x68, 0x6c, 0x79,
+	0x12, 0x19, 0x2e, 0x75, 0x73, 0x61, 0x67, 0x65, 0x2e, 0x52, 0x65, 0x61, 0x64, 0x4d, 0x6f, 0x6e,
+	0x74, 0x68, 0x6c, 0x79, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1a, 0x2e, 0x75, 0x73,
+	0x61, 0x67, 0x65, 0x2e, 0x52, 0x65, 0x61, 0x64, 0x4d, 0x6f, 0x6e, 0x74, 0x68, 0x6c, 0x79, 0x52,
+	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x42, 0x0f, 0x5a, 0x0d, 0x2e, 0x2f, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x3b, 0x75, 0x73, 0x61, 0x67, 0x65, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74,
+	0x6f, 0x33,
 }
 
 var (
@@ -1133,7 +1255,7 @@ func file_proto_usage_proto_rawDescGZIP() []byte {
 	return file_proto_usage_proto_rawDescData
 }
 
-var file_proto_usage_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_proto_usage_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_proto_usage_proto_goTypes = []interface{}{
 	(*ReadRequest)(nil),              // 0: usage.ReadRequest
 	(*UsageHistory)(nil),             // 1: usage.UsageHistory
@@ -1154,40 +1276,46 @@ var file_proto_usage_proto_goTypes = []interface{}{
 	(*APIRankUserItem)(nil),          // 16: usage.APIRankUserItem
 	(*ReadMonthlyTotalRequest)(nil),  // 17: usage.ReadMonthlyTotalRequest
 	(*ReadMonthlyTotalResponse)(nil), // 18: usage.ReadMonthlyTotalResponse
-	nil,                              // 19: usage.ReadResponse.UsageEntry
-	nil,                              // 20: usage.ReadMonthlyTotalResponse.EndpointRequestsEntry
-	(*structpb.Struct)(nil),          // 21: google.protobuf.Struct
+	(*ReadMonthlyRequest)(nil),       // 19: usage.ReadMonthlyRequest
+	(*ReadMonthlyResponse)(nil),      // 20: usage.ReadMonthlyResponse
+	nil,                              // 21: usage.ReadResponse.UsageEntry
+	nil,                              // 22: usage.ReadMonthlyTotalResponse.EndpointRequestsEntry
+	nil,                              // 23: usage.ReadMonthlyResponse.RequestsEntry
+	(*structpb.Struct)(nil),          // 24: google.protobuf.Struct
 }
 var file_proto_usage_proto_depIdxs = []int32{
 	2,  // 0: usage.UsageHistory.records:type_name -> usage.UsageRecord
-	19, // 1: usage.ReadResponse.usage:type_name -> usage.ReadResponse.UsageEntry
-	21, // 2: usage.Event.record:type_name -> google.protobuf.Struct
+	21, // 1: usage.ReadResponse.usage:type_name -> usage.ReadResponse.UsageEntry
+	24, // 2: usage.Event.record:type_name -> google.protobuf.Struct
 	8,  // 3: usage.SaveEventRequest.event:type_name -> usage.Event
 	8,  // 4: usage.ListEventsResponse.events:type_name -> usage.Event
 	15, // 5: usage.ListAPIRanksResponse.ranks:type_name -> usage.APIRankItem
 	16, // 6: usage.ListAPIRanksResponse.global_top_users:type_name -> usage.APIRankUserItem
 	16, // 7: usage.APIRankItem.top_users:type_name -> usage.APIRankUserItem
-	20, // 8: usage.ReadMonthlyTotalResponse.endpoint_requests:type_name -> usage.ReadMonthlyTotalResponse.EndpointRequestsEntry
-	1,  // 9: usage.ReadResponse.UsageEntry.value:type_name -> usage.UsageHistory
-	0,  // 10: usage.Usage.Read:input_type -> usage.ReadRequest
-	4,  // 11: usage.Usage.Sweep:input_type -> usage.SweepRequest
-	6,  // 12: usage.Usage.DeleteCustomer:input_type -> usage.DeleteCustomerRequest
-	9,  // 13: usage.Usage.SaveEvent:input_type -> usage.SaveEventRequest
-	11, // 14: usage.Usage.ListEvents:input_type -> usage.ListEventsRequest
-	13, // 15: usage.Usage.ListAPIRanks:input_type -> usage.ListAPIRanksRequest
-	17, // 16: usage.Usage.ReadMonthlyTotal:input_type -> usage.ReadMonthlyTotalRequest
-	3,  // 17: usage.Usage.Read:output_type -> usage.ReadResponse
-	5,  // 18: usage.Usage.Sweep:output_type -> usage.SweepResponse
-	7,  // 19: usage.Usage.DeleteCustomer:output_type -> usage.DeleteCustomerResponse
-	10, // 20: usage.Usage.SaveEvent:output_type -> usage.SaveEventResponse
-	12, // 21: usage.Usage.ListEvents:output_type -> usage.ListEventsResponse
-	14, // 22: usage.Usage.ListAPIRanks:output_type -> usage.ListAPIRanksResponse
-	18, // 23: usage.Usage.ReadMonthlyTotal:output_type -> usage.ReadMonthlyTotalResponse
-	17, // [17:24] is the sub-list for method output_type
-	10, // [10:17] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	22, // 8: usage.ReadMonthlyTotalResponse.endpoint_requests:type_name -> usage.ReadMonthlyTotalResponse.EndpointRequestsEntry
+	23, // 9: usage.ReadMonthlyResponse.requests:type_name -> usage.ReadMonthlyResponse.RequestsEntry
+	1,  // 10: usage.ReadResponse.UsageEntry.value:type_name -> usage.UsageHistory
+	0,  // 11: usage.Usage.Read:input_type -> usage.ReadRequest
+	4,  // 12: usage.Usage.Sweep:input_type -> usage.SweepRequest
+	6,  // 13: usage.Usage.DeleteCustomer:input_type -> usage.DeleteCustomerRequest
+	9,  // 14: usage.Usage.SaveEvent:input_type -> usage.SaveEventRequest
+	11, // 15: usage.Usage.ListEvents:input_type -> usage.ListEventsRequest
+	13, // 16: usage.Usage.ListAPIRanks:input_type -> usage.ListAPIRanksRequest
+	17, // 17: usage.Usage.ReadMonthlyTotal:input_type -> usage.ReadMonthlyTotalRequest
+	19, // 18: usage.Usage.ReadMonthly:input_type -> usage.ReadMonthlyRequest
+	3,  // 19: usage.Usage.Read:output_type -> usage.ReadResponse
+	5,  // 20: usage.Usage.Sweep:output_type -> usage.SweepResponse
+	7,  // 21: usage.Usage.DeleteCustomer:output_type -> usage.DeleteCustomerResponse
+	10, // 22: usage.Usage.SaveEvent:output_type -> usage.SaveEventResponse
+	12, // 23: usage.Usage.ListEvents:output_type -> usage.ListEventsResponse
+	14, // 24: usage.Usage.ListAPIRanks:output_type -> usage.ListAPIRanksResponse
+	18, // 25: usage.Usage.ReadMonthlyTotal:output_type -> usage.ReadMonthlyTotalResponse
+	20, // 26: usage.Usage.ReadMonthly:output_type -> usage.ReadMonthlyResponse
+	19, // [19:27] is the sub-list for method output_type
+	11, // [11:19] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_proto_usage_proto_init() }
@@ -1424,6 +1552,30 @@ func file_proto_usage_proto_init() {
 				return nil
 			}
 		}
+		file_proto_usage_proto_msgTypes[19].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*ReadMonthlyRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_usage_proto_msgTypes[20].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*ReadMonthlyResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1431,7 +1583,7 @@ func file_proto_usage_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_proto_usage_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   21,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

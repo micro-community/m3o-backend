@@ -26,7 +26,7 @@ type publicapiCache struct {
 func (p *publicapiCache) getPrice(api, endpoint string) int64 {
 	p.RLock()
 	defer p.RUnlock()
-	return p.apis[strings.ToLower(api)].Pricing[strings.ToLower(fmt.Sprintf("%s.%s", api, endpoint))]
+	return p.apis[strings.ToLower(api)].Pricing[strings.ToLower(endpoint)]
 }
 
 func (p *publicapiCache) getQuota(api, endpoint string) int64 {
@@ -36,7 +36,7 @@ func (p *publicapiCache) getQuota(api, endpoint string) int64 {
 	if a == nil {
 		return 0
 	}
-	return a.Quotas[strings.ToLower(fmt.Sprintf("%s.%s", api, endpoint))]
+	return a.Quotas[strings.ToLower(endpoint)]
 }
 
 func (p *publicapiCache) list() ([]*publicapi.PublicAPI, error) {
@@ -129,13 +129,13 @@ type usageCache struct {
 	usagesvc usage.UsageService
 }
 
-func (u *usageCache) getMonthlyUsageTotal(ctx context.Context, userID string) (map[string]int64, error) {
-	rsp, err := u.usagesvc.ReadMonthlyTotal(ctx, &usage.ReadMonthlyTotalRequest{
+func (u *usageCache) getMonthlyUsageTotal(ctx context.Context, userID string, api, endpoint string) (map[string]int64, error) {
+	rsp, err := u.usagesvc.ReadMonthly(ctx, &usage.ReadMonthlyRequest{
 		CustomerId: userID,
-		Detail:     true,
+		Endpoints:  []string{"totalfree", fmt.Sprintf("%s$%s", api, endpoint)},
 	}, client.WithAuthToken())
 	if err != nil {
 		return nil, err
 	}
-	return rsp.EndpointRequests, nil
+	return rsp.Requests, nil
 }

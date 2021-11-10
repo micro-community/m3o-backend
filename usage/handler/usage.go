@@ -645,7 +645,7 @@ func (p *UsageSvc) ReadMonthlyTotal(ctx context.Context, request *pb.ReadMonthly
 	count, err := p.c.readMonthly(ctx, request.CustomerId, "total", time.Now())
 	if err != nil {
 		log.Errorf("Error reading usage %s", err)
-		return errors.InternalServerError("usage.ReadMonthly", "Error reading usage")
+		return errors.InternalServerError("usage.ReadMonthlyTotal", "Error reading usage")
 	}
 	response.Requests = count
 
@@ -653,13 +653,31 @@ func (p *UsageSvc) ReadMonthlyTotal(ctx context.Context, request *pb.ReadMonthly
 		usage, err := p.c.listMonthliesForUser(request.CustomerId, time.Now())
 		if err != nil {
 			log.Errorf("Error reading usage %s", err)
-			return errors.InternalServerError("usage.ReadMonthly", "Error reading usage")
+			return errors.InternalServerError("usage.ReadMonthlyTotal", "Error reading usage")
 		}
 		ret := map[string]int64{}
 		for _, le := range usage {
 			ret[le.Service] = le.Count
 		}
 		response.EndpointRequests = ret
+	}
+	return nil
+}
+
+func (p *UsageSvc) ReadMonthly(ctx context.Context, request *pb.ReadMonthlyRequest, response *pb.ReadMonthlyResponse) error {
+	_, err := m3oauth.VerifyMicroAdmin(ctx, "usage.ReadMonthlyTotal")
+	if err != nil {
+		return err
+	}
+	t := time.Now()
+	response.Requests = map[string]int64{}
+	for _, v := range request.Endpoints {
+		count, err := p.c.readMonthly(ctx, request.CustomerId, v, t)
+		if err != nil {
+			log.Errorf("Error reading usage %s", err)
+			return errors.InternalServerError("usage.ReadMonthly", "Error reading usage")
+		}
+		response.Requests[v] = count
 	}
 	return nil
 }

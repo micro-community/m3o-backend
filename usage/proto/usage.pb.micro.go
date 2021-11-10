@@ -50,6 +50,7 @@ type UsageService interface {
 	ListEvents(ctx context.Context, in *ListEventsRequest, opts ...client.CallOption) (*ListEventsResponse, error)
 	ListAPIRanks(ctx context.Context, in *ListAPIRanksRequest, opts ...client.CallOption) (*ListAPIRanksResponse, error)
 	ReadMonthlyTotal(ctx context.Context, in *ReadMonthlyTotalRequest, opts ...client.CallOption) (*ReadMonthlyTotalResponse, error)
+	ReadMonthly(ctx context.Context, in *ReadMonthlyRequest, opts ...client.CallOption) (*ReadMonthlyResponse, error)
 }
 
 type usageService struct {
@@ -134,6 +135,16 @@ func (c *usageService) ReadMonthlyTotal(ctx context.Context, in *ReadMonthlyTota
 	return out, nil
 }
 
+func (c *usageService) ReadMonthly(ctx context.Context, in *ReadMonthlyRequest, opts ...client.CallOption) (*ReadMonthlyResponse, error) {
+	req := c.c.NewRequest(c.name, "Usage.ReadMonthly", in)
+	out := new(ReadMonthlyResponse)
+	err := c.c.Call(ctx, req, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Server API for Usage service
 
 type UsageHandler interface {
@@ -144,6 +155,7 @@ type UsageHandler interface {
 	ListEvents(context.Context, *ListEventsRequest, *ListEventsResponse) error
 	ListAPIRanks(context.Context, *ListAPIRanksRequest, *ListAPIRanksResponse) error
 	ReadMonthlyTotal(context.Context, *ReadMonthlyTotalRequest, *ReadMonthlyTotalResponse) error
+	ReadMonthly(context.Context, *ReadMonthlyRequest, *ReadMonthlyResponse) error
 }
 
 func RegisterUsageHandler(s server.Server, hdlr UsageHandler, opts ...server.HandlerOption) error {
@@ -155,6 +167,7 @@ func RegisterUsageHandler(s server.Server, hdlr UsageHandler, opts ...server.Han
 		ListEvents(ctx context.Context, in *ListEventsRequest, out *ListEventsResponse) error
 		ListAPIRanks(ctx context.Context, in *ListAPIRanksRequest, out *ListAPIRanksResponse) error
 		ReadMonthlyTotal(ctx context.Context, in *ReadMonthlyTotalRequest, out *ReadMonthlyTotalResponse) error
+		ReadMonthly(ctx context.Context, in *ReadMonthlyRequest, out *ReadMonthlyResponse) error
 	}
 	type Usage struct {
 		usage
@@ -193,4 +206,8 @@ func (h *usageHandler) ListAPIRanks(ctx context.Context, in *ListAPIRanksRequest
 
 func (h *usageHandler) ReadMonthlyTotal(ctx context.Context, in *ReadMonthlyTotalRequest, out *ReadMonthlyTotalResponse) error {
 	return h.UsageHandler.ReadMonthlyTotal(ctx, in, out)
+}
+
+func (h *usageHandler) ReadMonthly(ctx context.Context, in *ReadMonthlyRequest, out *ReadMonthlyResponse) error {
+	return h.UsageHandler.ReadMonthly(ctx, in, out)
 }

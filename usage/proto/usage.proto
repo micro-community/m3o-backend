@@ -13,6 +13,7 @@ service Usage {
 	rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {}
 	rpc ListAPIRanks(ListAPIRanksRequest) returns (ListAPIRanksResponse) {}
 	rpc ReadMonthlyTotal(ReadMonthlyTotalRequest) returns (ReadMonthlyTotalResponse) {}
+	rpc ReadMonthly(ReadMonthlyRequest) returns (ReadMonthlyResponse) {}
 }
 
 message ReadRequest {
@@ -98,4 +99,13 @@ message ReadMonthlyTotalRequest {
 message ReadMonthlyTotalResponse {
 	int64 requests = 1; // total requests in the month
  	map<string, int64> endpoint_requests = 2; // requests for each endpoint in the month
+}
+
+message ReadMonthlyRequest {
+	string customer_id = 1;
+	repeated string endpoints = 2;
+}
+
+message ReadMonthlyResponse {
+	map<string, int64> requests = 1;
 }

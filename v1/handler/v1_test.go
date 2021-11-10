@@ -221,12 +221,10 @@ func TestCallVerification(t *testing.T) {
 			}
 
 			fakeusage := usagefake.FakeUsageService{
-				ReadMonthlyTotalStub: func(ctx context.Context, request *usage.ReadMonthlyTotalRequest, option ...muclient.CallOption) (*usage.ReadMonthlyTotalResponse, error) {
-					return &usage.ReadMonthlyTotalResponse{
-						Requests: 2,
-						EndpointRequests: map[string]int64{
+				ReadMonthlyStub: func(ctx context.Context, request *usage.ReadMonthlyRequest, option ...muclient.CallOption) (*usage.ReadMonthlyResponse, error) {
+					return &usage.ReadMonthlyResponse{
+						Requests: map[string]int64{
 							"helloworld$Helloworld.Call": tc.reqCount,
-							"total":                      125,
 							"totalfree":                  tc.totalFreeCount,
 						},
 					}, nil
