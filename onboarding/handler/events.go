@@ -9,9 +9,7 @@ import (
 )
 
 type Onboarding struct {
-	balSvc       balance.BalanceService
-	promoCredit  int64
-	promoMessage string
+	balSvc balance.BalanceService
 }
 
 func NewOnboarding(svc *service.Service) *Onboarding {
@@ -23,13 +21,8 @@ func NewOnboarding(svc *service.Service) *Onboarding {
 	if err := v.Scan(&cfg); err != nil {
 		log.Fatalf("Failed to load config %s", err)
 	}
-	if cfg.PromoCredit == 0 || len(cfg.PromoMessage) == 0 {
-		log.Fatalf("Missing config")
-	}
 	o := &Onboarding{
-		balSvc:       balance.NewBalanceService("balance", svc.Client()),
-		promoCredit:  cfg.PromoCredit,
-		promoMessage: cfg.PromoMessage,
+		balSvc: balance.NewBalanceService("balance", svc.Client()),
 	}
 	return o
 }

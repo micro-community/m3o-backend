@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math/rand"
+	"regexp"
 	"strings"
 	"time"
 
@@ -67,9 +68,9 @@ type sendgridConf struct {
 }
 
 type conf struct {
-	Sendgrid     sendgridConf `json:"sendgrid"`
-	PromoCredit  int64        `json:"promoCredit"`
-	PromoMessage string       `json:"promoMessage"`
+	Sendgrid  sendgridConf `json:"sendgrid"`
+	AllowList []string     `json:"allow_list"`
+	BlockList []string     `json:"block_list"`
 }
 
 func NewSignup(srv *service.Service, auth auth.Auth) *Signup {
@@ -145,6 +146,39 @@ func (e *Signup) sendVerificationEmail(ctx context.Context,
 	req *onboarding.SendVerificationEmailRequest,
 	rsp *onboarding.SendVerificationEmailResponse) error {
 	logger.Info("Received Signup.SendVerificationEmail request")
+
+	// check block list and allow list
+	if len(e.config.BlockList) > 0 {
+		for _, email := range e.config.BlockList {
+			re, err := regexp.Compile(email)
+			if err != nil {
+				logger.Warnf("Failed to compile block list regexp %s", email)
+				continue
+			}
+			if re.MatchString(req.Email) {
+				logger.Infof("Blocking email from signup %s", req.Email)
+				return merrors.InternalServerError("onboarding.SendVerificationEmail", "Error sending verification email for user")
+			}
+		}
+	} else if len(e.config.AllowList) > 0 {
+		// only allow these to signup
+		allowed := false
+		for _, email := range e.config.AllowList {
+			re, err := regexp.Compile(email)
+			if err != nil {
+				logger.Warnf("Failed to compile allow list regexp %s", email)
+				continue
+			}
+			if re.MatchString(req.Email) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			logger.Infof("Blocking email from signup %s", req.Email)
+			return merrors.InternalServerError("onboarding.SendVerificationEmail", "Error sending verification email for user")
+		}
+	}
 
 	// create entry in customers service
 	crsp, err := e.customerService.Create(ctx, &cproto.CreateRequest{Email: req.Email}, client.WithAuthToken())
