@@ -399,7 +399,9 @@ func getApiEndpointFromURL(reqURL string) (string, string, error) {
 		return "", "", errors.NotFound("v1", "")
 	}
 
-	service := parts[0]
+	// lowercase the service name so /v1/Helloworld/Call is still valid
+	service := strings.ToLower(parts[0])
+
 	endpoint := ""
 	if len(parts) == 2 {
 		// /v1/helloworld/call -> helloworld Helloworld.Call
