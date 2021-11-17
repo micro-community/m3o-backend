@@ -28,6 +28,7 @@ type conf struct {
 	SendingEnabled bool         `json:"enabled"`
 	DefaultFrom    string       `json:"email_from"`
 	Sendgrid       sendgridConf `json:"sendgrid"`
+	PoolName       string       `json:"ip_pool_name"`
 }
 
 func NewEmailsHandler() *Emails {
@@ -94,7 +95,8 @@ func (e *Emails) sendEmail(from, to, templateID string, templateData map[string]
 	if len(emailFrom) == 0 {
 		emailFrom = e.config.DefaultFrom // TODO only works while this is an internal M3O service
 	}
-	reqBody, _ := json.Marshal(map[string]interface{}{
+
+	reqMap := map[string]interface{}{
 		"template_id": templateID,
 		"from": map[string]string{
 			"email": emailFrom,
@@ -114,7 +116,12 @@ func (e *Emails) sendEmail(from, to, templateID string, templateData map[string]
 				"enable": !e.config.SendingEnabled,
 			},
 		},
-	})
+	}
+	if len(e.config.PoolName) > 0 {
+		reqMap["ip_pool_name"] = e.config.PoolName
+	}
+
+	reqBody, _ := json.Marshal(reqMap)
 
 	req, err := http.NewRequest("POST", "https://api.sendgrid.com/v3/mail/send", bytes.NewBuffer(reqBody))
 	if err != nil {
