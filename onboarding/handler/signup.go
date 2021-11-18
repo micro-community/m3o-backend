@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/rand"
 	"regexp"
 	"strings"
@@ -35,7 +36,8 @@ const (
 )
 
 const (
-	expiryDuration = 5 * time.Minute
+	expiryDuration  = 5 * time.Minute
+	prefixTrackByID = "onboarding.TrackRequest:eqByIdUnordById"
 )
 
 type tokenToEmail struct {
@@ -409,31 +411,50 @@ func (e *Signup) Track(ctx context.Context,
 	req *onboarding.TrackRequest,
 	rsp *onboarding.TrackResponse) error {
 	if req.Id == "" {
-		return errors.New("no tracking id")
+		return merrors.BadRequest("onboarding.signup.track", "Missing ID param")
 	}
-	oldTrack := []*onboarding.TrackRequest{}
-	err := e.track.Read(model.QueryEquals("id", req.Id), &oldTrack)
-	if err != nil {
-		return err
+	oldTrack := onboarding.TrackRequest{}
+	// CRUFT : not a typo, req.Id is repeated to be compatible with the old implementation
+	key := fmt.Sprintf("%s:%s:%s", prefixTrackByID, req.Id, req.Id)
+	recs, err := mstore.Read(key)
+	if err != nil && err != mstore.ErrNotFound {
+		logger.Errorf("Error looking up id %s", err)
+		return merrors.InternalServerError("onboarding.signup.track", "Error processing request")
 	}
-	if len(oldTrack) == 0 {
-		return e.track.Create(req)
+	if len(recs) > 0 {
+		if err := json.Unmarshal(recs[0].Value, &oldTrack); err != nil {
+			logger.Errorf("Error marshalling %s", err)
+			return merrors.InternalServerError("onboarding.signup.track", "Error processing request")
+		}
 	}
+
 	// support partial update
 	if req.GetFirstVisit() == 0 {
-		req.FirstVisit = oldTrack[0].FirstVisit
+		req.FirstVisit = oldTrack.FirstVisit
 	}
 	if req.GetFirstVerification() == 0 {
-		req.FirstVerification = oldTrack[0].FirstVerification
+		req.FirstVerification = oldTrack.FirstVerification
 	}
 	if req.Referrer == "" {
-		req.Referrer = oldTrack[0].Referrer
+		req.Referrer = oldTrack.Referrer
 	}
 	if req.Registration == 0 {
-		req.Registration = oldTrack[0].Registration
+		req.Registration = oldTrack.Registration
 	}
 	if req.Email == "" {
-		req.Email = oldTrack[0].Email
+		req.Email = oldTrack.Email
 	}
-	return e.track.Update(req)
+
+	b, err := json.Marshal(req)
+	if err != nil {
+		logger.Errorf("Error marshalling %s", err)
+		return merrors.InternalServerError("onboarding.signup.track", "Error processing request")
+	}
+
+	if err := mstore.Write(&mstore.Record{Key: key, Value: b}); err != nil {
+		logger.Errorf("Error writing update %s", err)
+		return merrors.InternalServerError("onboarding.signup.track", "Error processing request")
+	}
+
+	return nil
 }
