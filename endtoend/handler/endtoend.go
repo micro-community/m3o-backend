@@ -30,8 +30,8 @@ import (
 )
 
 const (
-	signupFrom     = "Micro Team <support@m3o.com>"
-	signupSubject  = "M3O Platform - Email Verification"
+	signupFrom     = "M3O <noreply@m3o.com>"
+	signupSubject  = "Verify your M3O account email"
 	keyOtp         = "otp"
 	keyCheckResult = "checkResult"
 
