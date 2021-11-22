@@ -302,13 +302,17 @@ func (v1 *V1) verifyCallAllowed(ctx context.Context, apiRec *apiKeyRecord, reqUR
 		// fail open
 		return "free", nil
 	}
+
+	blockErr := errBlocked("Insufficient funds")
 	if price == 0 {
 		// it's free!!
 		// have we hit our fair use quota for the month?
-		if use["totalfree"] >= defaultMonthlyUsageCap {
-			return "", errBlocked("Monthly usage cap exceeded")
+		if use["totalfree"] < defaultMonthlyUsageCap {
+			return "free", nil
 		}
-		return "free", nil
+		// start charging the unit price
+		price = 1
+		blockErr = errBlocked("Monthly usage cap exceeded")
 	}
 
 	// have we used our free quota for this particular API?
@@ -333,7 +337,7 @@ func (v1 *V1) verifyCallAllowed(ctx context.Context, apiRec *apiKeyRecord, reqUR
 		return fmt.Sprintf("%d", price), nil
 	}
 
-	return "", errBlocked("Insufficient funds")
+	return "", blockErr
 
 }
 

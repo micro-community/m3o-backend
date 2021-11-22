@@ -26,6 +26,7 @@ func TestCallVerification(t *testing.T) {
 		price          int64
 		reqCount       int64
 		totalFreeCount int64
+		balanceZero    bool
 	}{
 		{
 			key: &apiKeyRecord{
@@ -55,10 +56,26 @@ func TestCallVerification(t *testing.T) {
 				Token:     "token",
 				Status:    keyStatusActive,
 			},
-			name:           "free monthly cap exceeded",
+			name:           "free monthly cap exceeded zero money",
 			err:            errBlocked("Monthly usage cap exceeded"),
 			priceRet:       "",
 			totalFreeCount: 1000000,
+			balanceZero:    true,
+		},
+		{
+			key: &apiKeyRecord{
+				ID:        "id",
+				ApiKey:    "apikey",
+				Scopes:    []string{"helloworld"},
+				UserID:    "userid",
+				AccID:     "accid",
+				Namespace: "micro",
+				Token:     "token",
+				Status:    keyStatusActive,
+			},
+			name:           "free monthly cap exceeded fall back to money",
+			totalFreeCount: 1000000,
+			priceRet:       "1",
 		},
 		{
 			key: &apiKeyRecord{
@@ -214,9 +231,13 @@ func TestCallVerification(t *testing.T) {
 					}}, nil
 				},
 			}
+			bal := int64(10)
+			if tc.balanceZero {
+				bal = 0
+			}
 			fakebalance := balancefake.FakeBalanceService{
 				CurrentStub: func(ctx context.Context, request *balance.CurrentRequest, option ...muclient.CallOption) (*balance.CurrentResponse, error) {
-					return &balance.CurrentResponse{CurrentBalance: 10}, nil
+					return &balance.CurrentResponse{CurrentBalance: bal}, nil
 				},
 			}
 

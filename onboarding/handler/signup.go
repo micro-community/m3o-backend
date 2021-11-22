@@ -55,7 +55,6 @@ type Signup struct {
 	config          conf
 	cache           *cache.Cache
 	resetCode       model.Model
-	track           model.Model
 }
 
 type ResetToken struct {
@@ -97,9 +96,6 @@ func NewSignup(srv *service.Service, auth auth.Auth) *Signup {
 		config:          c,
 		cache:           cache.New(1*time.Minute, 5*time.Minute),
 		resetCode:       model.New(ResetToken{}, nil),
-		track: model.New(onboarding.TrackRequest{}, &model.Options{
-			Key: "id",
-		}),
 	}
 	return s
 }
