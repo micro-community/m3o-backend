@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	balance "github.com/m3o/services/balance/proto"
@@ -276,4 +277,88 @@ func TestCallVerification(t *testing.T) {
 		})
 	}
 
+}
+
+type dummyCache struct {
+	found bool
+}
+
+func (d dummyCache) Add(ctx context.Context, key string, value interface{}) error {
+	return nil
+}
+
+func (d dummyCache) Remove(ctx context.Context, key string) error {
+	return nil
+}
+
+func (d dummyCache) GetAPIKeyRecord(ctx context.Context, key string) (*apiKeyRecord, error) {
+	if d.found {
+		return &apiKeyRecord{ApiKey: key}, nil
+	}
+	return nil, fmt.Errorf("not found")
+}
+
+func TestReadAPIRecordsByKey(t *testing.T) {
+	g := NewWithT(t)
+	tcs := []struct {
+		name    string
+		authHdr string
+		key     string
+		found   bool
+		err     error
+	}{
+		{
+			name:    "Base case",
+			authHdr: "Bearer 12345",
+			key:     "12345",
+			found:   true,
+			err:     nil,
+		},
+		{
+			name:    "Base case not found",
+			authHdr: "Bearer 12345",
+			key:     "",
+			found:   false,
+			err:     errUnauthorized,
+		},
+		{
+			name:    "Basic auth case",
+			authHdr: "Basic Zm9vOmJhcg==",
+			key:     "bar",
+			found:   true,
+			err:     nil,
+		},
+		{
+			name:    "Basic auth case not found",
+			authHdr: "Bearer Zm9vOmJhcg==",
+			key:     "",
+			found:   false,
+			err:     errUnauthorized,
+		},
+		{
+			name:    "Bad format header",
+			authHdr: "Foobar baz",
+			key:     "",
+			found:   false,
+			err:     errUnauthorized,
+		},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			v1 := V1{
+				keyRecCache: &dummyCache{
+					found: tc.found,
+				},
+			}
+			key, rec, err := v1.readAPIRecordByAPIKey(context.Background(), tc.authHdr)
+			if tc.err != nil {
+				g.Expect(err).To(Equal(err))
+			} else {
+				g.Expect(err).To(BeNil())
+				g.Expect(key).To(Equal(tc.key))
+				g.Expect(rec).ToNot(BeNil())
+			}
+		})
+	}
 }

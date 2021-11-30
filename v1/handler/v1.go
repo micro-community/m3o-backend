@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -44,7 +45,7 @@ const (
 
 type V1 struct {
 	accsvc         authpb.AccountsService
-	keyRecCache    *expiringLRUCache
+	keyRecCache    expiringLRUCache
 	balanceCache   *balanceCache
 	usageCache     *usageCache
 	publicapiCache *publicapiCache
@@ -90,7 +91,7 @@ func NewHandler(srv *service.Service) *V1 {
 		},
 	})
 	papi := publicapi.NewPublicapiService("publicapi", srv.Client())
-	keyRecCache := expiringLRUCache{redisClient: rc, ttl: lruCacheTTL}
+	keyRecCache := expiringRedisCache{redisClient: rc, ttl: lruCacheTTL}
 	papiCache := &publicapiCache{
 		apis: map[string]*publicapi.PublicAPI{},
 		papi: papi,
@@ -214,12 +215,26 @@ func (v1 *V1) checkRequestedScopes(ctx context.Context, requestedScopes []string
 }
 
 func (v1 *V1) readAPIRecordByAPIKey(ctx context.Context, authz string) (string, *apiKeyRecord, error) {
-	if len(authz) == 0 || !strings.HasPrefix(authz, "Bearer ") {
+	if len(authz) == 0 || (!strings.HasPrefix(authz, "Bearer ") && !strings.HasPrefix(authz, "Basic ")) {
 		return "", nil, errUnauthorized
 	}
+	var key string
+	if strings.HasPrefix(authz, "Bearer ") {
+		key = authz[7:]
+	} else {
+		b, err := base64.StdEncoding.DecodeString(authz[6:])
+		if err != nil {
+			return "", nil, errUnauthorized
+		}
+		parts := strings.SplitN(string(b), ":", 2)
+		if len(parts) != 2 {
+			return "", nil, errUnauthorized
+		}
 
+		key = parts[1]
+	}
 	// do lookup on hash of key
-	key := authz[7:]
+
 	hashed, err := hashSecret(key)
 	if err != nil {
 		return "", nil, errUnauthorized

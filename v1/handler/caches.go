@@ -99,21 +99,27 @@ func (b *balanceCache) getBalance(ctx context.Context, userID string) (int64, er
 }
 
 // expiringLRUCache caches the API key records for faster retrieval rather than hitting the DB for every call
-type expiringLRUCache struct {
+type expiringLRUCache interface {
+	Add(ctx context.Context, key string, value interface{}) error
+	Remove(ctx context.Context, key string) error
+	GetAPIKeyRecord(ctx context.Context, key string) (*apiKeyRecord, error)
+}
+
+type expiringRedisCache struct {
 	redisClient *redis.Client
 	ttl         time.Duration
 }
 
-func (c *expiringLRUCache) Add(ctx context.Context, key string, value interface{}) error {
+func (c *expiringRedisCache) Add(ctx context.Context, key string, value interface{}) error {
 	val, _ := json.Marshal(value)
 	return c.redisClient.Set(ctx, fmt.Sprintf("%s:%s", keyCachePrefix, key), val, c.ttl).Err()
 }
 
-func (c *expiringLRUCache) Remove(ctx context.Context, key string) error {
+func (c *expiringRedisCache) Remove(ctx context.Context, key string) error {
 	return c.redisClient.Del(ctx, fmt.Sprintf("%s:%s", keyCachePrefix, key)).Err()
 }
 
-func (c *expiringLRUCache) GetAPIKeyRecord(ctx context.Context, key string) (*apiKeyRecord, error) {
+func (c *expiringRedisCache) GetAPIKeyRecord(ctx context.Context, key string) (*apiKeyRecord, error) {
 	b, err := c.redisClient.Get(ctx, fmt.Sprintf("%s:%s", keyCachePrefix, key)).Bytes()
 	if err != nil {
 		return nil, err

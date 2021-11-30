@@ -10,7 +10,7 @@ require (
 	github.com/google/uuid v1.1.2
 	github.com/gorilla/websocket v1.4.2
 	github.com/micro/micro/plugin/prometheus/v3 v3.0.0-20210806112317-b9d708632505
-	github.com/micro/micro/v3 v3.7.1-0.20211122094854-66b46d0370fa
+	github.com/micro/micro/v3 v3.8.1-0.20211130091829-444c4676dc3a
 	github.com/micro/services v0.18.1-0.20210820083700-3f2383c55554
 	github.com/onsi/gomega v1.10.5
 	github.com/patrickmn/go-cache v2.1.0+incompatible
