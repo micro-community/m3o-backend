@@ -22,6 +22,7 @@ import (
 	publicapi "github.com/m3o/services/publicapi/proto"
 	usage "github.com/m3o/services/usage/proto"
 	v1 "github.com/m3o/services/v1/proto"
+	pbapi "github.com/micro/micro/v3/proto/api"
 	authpb "github.com/micro/micro/v3/proto/auth"
 	"github.com/micro/micro/v3/service"
 	"github.com/micro/micro/v3/service/api"
@@ -493,6 +494,15 @@ func (v1 *V1) Endpoint(ctx context.Context, stream server.Stream) (retErr error)
 		return serveStream(ctx, stream, service, endpoint, svcs, apiRec, price)
 	}
 
+	// work out if this endpoint is api request
+	isAPIReq := false
+	for _, ep := range svcs[0].Endpoints {
+		if strings.ToLower(ep.Name) == strings.ToLower(endpoint) {
+			isAPIReq = ep.Metadata["handler"] == "api"
+			break
+		}
+	}
+
 	// forward the request
 	var payload json.RawMessage
 	if err := stream.Recv(&payload); err != nil {
@@ -505,10 +515,21 @@ func (v1 *V1) Endpoint(ctx context.Context, stream server.Stream) (retErr error)
 		payload = mergeURLPayload(ctx, md, u, payload)
 	}
 
+	var payloadOut interface{}
+	if isAPIReq {
+		payloadOut, err = requestToProto(ctx, payload, "")
+		if err != nil {
+			log.Errorf("Error processing request %s", err)
+			return errInternal
+		}
+	} else {
+		payloadOut = payload
+	}
+
 	request := client.DefaultClient.NewRequest(
 		service,
 		endpoint,
-		&payload,
+		payloadOut,
 		client.WithContentType(ct),
 	)
 	// create request/response
@@ -624,4 +645,27 @@ func (v1 *V1) deleteCustomer(ctx context.Context, userID string) error {
 		}
 	}
 	return nil
+}
+
+func requestToProto(ctx context.Context, body []byte, reqURL string) (*pbapi.Request, error) {
+	md, _ := metadata.FromContext(ctx)
+	req := &pbapi.Request{
+		Path:   reqURL,
+		Method: md["Method"],
+		Header: make(map[string]*pbapi.Pair),
+		Get:    make(map[string]*pbapi.Pair),
+		Post:   make(map[string]*pbapi.Pair),
+		Url:    md["host"] + md["url"],
+	}
+
+	req.Body = string(body)
+
+	for k, v := range md {
+		req.Header[k] = &pbapi.Pair{
+			Key:    k,
+			Values: []string{v},
+		}
+	}
+
+	return req, nil
 }
