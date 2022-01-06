@@ -16,7 +16,6 @@ import (
 )
 
 func TestCallVerification(t *testing.T) {
-	g := NewWithT(t)
 
 	tcs := []struct {
 		key            *apiKeyRecord
@@ -220,6 +219,7 @@ func TestCallVerification(t *testing.T) {
 
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
 			fakepapi := publicapifake.FakePublicapiService{
 				ListStub: func(ctx context.Context, request *publicapi.ListRequest, option ...muclient.CallOption) (*publicapi.ListResponse, error) {
 					return &publicapi.ListResponse{Apis: []*publicapi.PublicAPI{
@@ -299,7 +299,6 @@ func (d dummyCache) GetAPIKeyRecord(ctx context.Context, key string) (*apiKeyRec
 }
 
 func TestReadAPIRecordsByKey(t *testing.T) {
-	g := NewWithT(t)
 	tcs := []struct {
 		name    string
 		authHdr string
@@ -346,6 +345,7 @@ func TestReadAPIRecordsByKey(t *testing.T) {
 
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
 			v1 := V1{
 				keyRecCache: &dummyCache{
 					found: tc.found,
