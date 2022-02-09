@@ -6,13 +6,17 @@ package usage;
 option go_package = "./proto;usage";
 
 service Usage {
+	// Returns the usage across all APIs historically, detail response includes at endpoint level. Powers the UI
 	rpc Read(ReadRequest) returns (ReadResponse) {}
 	rpc Sweep(SweepRequest) returns (SweepResponse) {}
 	rpc DeleteCustomer(DeleteCustomerRequest) returns (DeleteCustomerResponse) {}
 	rpc SaveEvent(SaveEventRequest) returns (SaveEventResponse) {}
 	rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {}
+	// Returns the ranking of top 10 users for each API
 	rpc ListAPIRanks(ListAPIRanksRequest) returns (ListAPIRanksResponse) {}
+	// Returns the usage for this month. Detail response breaks down across all endpoints
 	rpc ReadMonthlyTotal(ReadMonthlyTotalRequest) returns (ReadMonthlyTotalResponse) {}
+	// Returns monthly usage per specified endpoints, used by V1 api
 	rpc ReadMonthly(ReadMonthlyRequest) returns (ReadMonthlyResponse) {}
 }
 
@@ -33,6 +37,7 @@ message UsageRecord {
 
 message ReadResponse {
 	map<string, UsageHistory> usage = 1;
+	int64 quota_remaining = 2;
 }
 
 message SweepRequest {}
@@ -107,5 +112,6 @@ message ReadMonthlyRequest {
 }
 
 message ReadMonthlyResponse {
-	map<string, int64> requests = 1;
+	map<string, int64> requests = 1; // actual usage
+	map<string, int64> quotas = 2; // how much they can do in a month
 }

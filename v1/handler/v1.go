@@ -19,6 +19,7 @@ import (
 	balance "github.com/m3o/services/balance/proto"
 	m3oauth "github.com/m3o/services/pkg/auth"
 	"github.com/m3o/services/pkg/events/proto/requests"
+	projects "github.com/m3o/services/projects/proto"
 	publicapi "github.com/m3o/services/publicapi/proto"
 	usage "github.com/m3o/services/usage/proto"
 	v1 "github.com/m3o/services/v1/proto"
@@ -51,6 +52,7 @@ type V1 struct {
 	usageCache     *usageCache
 	publicapiCache *publicapiCache
 	alerts         alertpb.AlertService
+	projSvc        projects.ProjectsService
 }
 
 const (
@@ -110,7 +112,8 @@ func NewHandler(srv *service.Service) *V1 {
 		usageCache: &usageCache{
 			usagesvc: usage.NewUsageService("usage", srv.Client()),
 		},
-		alerts: alertpb.NewAlertService("alert", srv.Client()),
+		alerts:  alertpb.NewAlertService("alert", srv.Client()),
+		projSvc: projects.NewProjectsService("projects", srv.Client()),
 	}
 	go v1api.consumeEvents()
 	return v1api
@@ -312,7 +315,7 @@ func (v1 *V1) verifyCallAllowed(ctx context.Context, apiRec *apiKeyRecord, reqUR
 
 	service, endpoint, err := getApiEndpointFromURL(reqURL)
 
-	use, err := v1.usageCache.getMonthlyUsageTotal(ctx, apiRec.UserID, service, endpoint)
+	use, quotas, err := v1.usageCache.getMonthlyUsageTotal(ctx, apiRec.UserID, service, endpoint)
 	if err != nil {
 		log.Errorf("Failed to retrieve usage %s", err)
 		// fail open
@@ -323,7 +326,7 @@ func (v1 *V1) verifyCallAllowed(ctx context.Context, apiRec *apiKeyRecord, reqUR
 	if price == 0 {
 		// it's free!!
 		// have we hit our fair use quota for the month?
-		if use["totalfree"] < defaultMonthlyUsageCap {
+		if use["totalfree"] < quotas["totalfree"] {
 			return "free", nil
 		}
 		// start charging the unit price
@@ -598,6 +601,7 @@ func publishEndpointEvent(reqURL, apiName, endpointName string, apiRec *apiKeyRe
 			ApiName:      apiName,
 			EndpointName: endpointName,
 			Price:        price,
+			ProjectId:    apiRec.UserID,
 		}}); err != nil {
 		log.Errorf("Error publishing event %s", err)
 	}

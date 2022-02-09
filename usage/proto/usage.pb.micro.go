@@ -43,13 +43,17 @@ func NewUsageEndpoints() []*api.Endpoint {
 // Client API for Usage service
 
 type UsageService interface {
+	// Returns the usage across all APIs historically, detail response includes at endpoint level. Powers the UI
 	Read(ctx context.Context, in *ReadRequest, opts ...client.CallOption) (*ReadResponse, error)
 	Sweep(ctx context.Context, in *SweepRequest, opts ...client.CallOption) (*SweepResponse, error)
 	DeleteCustomer(ctx context.Context, in *DeleteCustomerRequest, opts ...client.CallOption) (*DeleteCustomerResponse, error)
 	SaveEvent(ctx context.Context, in *SaveEventRequest, opts ...client.CallOption) (*SaveEventResponse, error)
 	ListEvents(ctx context.Context, in *ListEventsRequest, opts ...client.CallOption) (*ListEventsResponse, error)
+	// Returns the ranking of top 10 users for each API
 	ListAPIRanks(ctx context.Context, in *ListAPIRanksRequest, opts ...client.CallOption) (*ListAPIRanksResponse, error)
+	// Returns the usage for this month. Detail response breaks down across all endpoints
 	ReadMonthlyTotal(ctx context.Context, in *ReadMonthlyTotalRequest, opts ...client.CallOption) (*ReadMonthlyTotalResponse, error)
+	// Returns monthly usage per specified endpoints, used by V1 api
 	ReadMonthly(ctx context.Context, in *ReadMonthlyRequest, opts ...client.CallOption) (*ReadMonthlyResponse, error)
 }
 
@@ -148,13 +152,17 @@ func (c *usageService) ReadMonthly(ctx context.Context, in *ReadMonthlyRequest, 
 // Server API for Usage service
 
 type UsageHandler interface {
+	// Returns the usage across all APIs historically, detail response includes at endpoint level. Powers the UI
 	Read(context.Context, *ReadRequest, *ReadResponse) error
 	Sweep(context.Context, *SweepRequest, *SweepResponse) error
 	DeleteCustomer(context.Context, *DeleteCustomerRequest, *DeleteCustomerResponse) error
 	SaveEvent(context.Context, *SaveEventRequest, *SaveEventResponse) error
 	ListEvents(context.Context, *ListEventsRequest, *ListEventsResponse) error
+	// Returns the ranking of top 10 users for each API
 	ListAPIRanks(context.Context, *ListAPIRanksRequest, *ListAPIRanksResponse) error
+	// Returns the usage for this month. Detail response breaks down across all endpoints
 	ReadMonthlyTotal(context.Context, *ReadMonthlyTotalRequest, *ReadMonthlyTotalResponse) error
+	// Returns monthly usage per specified endpoints, used by V1 api
 	ReadMonthly(context.Context, *ReadMonthlyRequest, *ReadMonthlyResponse) error
 }
 

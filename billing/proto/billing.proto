@@ -1,20 +1,48 @@
 syntax = "proto3";
 
-package stripe;
+package billing;
 
-option go_package = "./proto;stripe";
+option go_package = "./proto;billing";
 
-service Stripe {
+service Billing {
+	// Subscribe to a tier
+	rpc SubscribeTier(SubscribeTierRequest) returns (SubscribeTierResponse) {}
+
+
+	rpc ReadAccount(ReadAccountRequest) returns (ReadAccountResponse) {}
+
+	// Proxy stripe endpoints
+
 	rpc CreateCheckoutSession(CreateCheckoutSessionRequest) returns (CreateCheckoutSessionResponse);
 	rpc ListCards(ListCardsRequest) returns (ListCardsResponse);
 	rpc ChargeCard(ChargeCardRequest) returns (ChargeCardResponse);
 	rpc DeleteCard(DeleteCardRequest) returns (DeleteCardResponse);
 	rpc ListPayments(ListPaymentsRequest) returns (ListPaymentsResponse);
 	rpc GetPayment(GetPaymentRequest) returns (GetPaymentResponse);
-	rpc Subscribe(SubscribeRequest) returns (SubscribeResponse);
-	rpc Unsubscribe(UnsubscribeRequest) returns (UnsubscribeResponse);
 	rpc SetupCard(SetupCardRequest) returns (SetupCardResponse);
 }
+
+
+message SubscribeTierRequest {
+	string id = 1; // ID of the tier - free, pro, team
+	string card_id = 2; // The card to charge
+}
+
+message SubscribeTierResponse {}
+
+message Tier {
+	string id = 1;
+	string name = 2;
+	string price = 3; // why string? Because then we can do things like $5 per / month
+	string description = 4;
+}
+
+
+message Subscription {
+	string id = 1;
+	// TODO add more useful fields
+}
+
 
 message CreateCheckoutSessionRequest {
 	int64 amount = 1;
@@ -61,7 +89,6 @@ message Payment {
 	string currency = 3;
 	int64 date = 4;
 	string receipt_url = 5;
-	string description = 6;
 }
 
 message ListPaymentsResponse {
@@ -76,20 +103,21 @@ message GetPaymentResponse {
 	Payment payment = 1;
 }
 
-message SubscribeRequest {
-	string price_id = 1;
-	string card_id = 2;
+// Read an account either by account ID or admin ID
+message ReadAccountRequest {
+	string id = 1;
+	string admin_id = 2;
 }
 
-message SubscribeResponse {
-	string subscription_id = 1;
+message ReadAccountResponse {
+	BillingAccount billing_account = 1;
 }
 
-message UnsubscribeRequest {
-	string subscription_id = 1;
-}
-
-message UnsubscribeResponse {
+message BillingAccount {
+	string id = 1;
+	repeated string admins = 2;
+	repeated string members = 3;
+	repeated Subscription subscriptions = 4;
 }
 
 message SetupCardRequest {}
