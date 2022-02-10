@@ -3,7 +3,8 @@ module github.com/m3o/services
 go 1.14
 
 require (
-	github.com/go-redis/redis/v8 v8.5.0
+	github.com/go-redis/redis/v8 v8.8.0
+	github.com/go-redis/redismock/v8 v8.0.6
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/golang/protobuf v1.5.1
 	github.com/google/go-github/v38 v38.1.0

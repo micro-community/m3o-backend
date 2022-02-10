@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
+	"github.com/go-redis/redismock/v8"
 	balance "github.com/m3o/services/balance/proto"
 	balancefake "github.com/m3o/services/balance/proto/fakes"
 	publicapi "github.com/m3o/services/publicapi/proto"
@@ -12,6 +14,7 @@ import (
 	usage "github.com/m3o/services/usage/proto"
 	usagefake "github.com/m3o/services/usage/proto/fakes"
 	muclient "github.com/micro/micro/v3/service/client"
+	"github.com/micro/micro/v3/service/errors"
 	. "github.com/onsi/gomega"
 )
 
@@ -27,6 +30,7 @@ func TestCallVerification(t *testing.T) {
 		reqCount       int64
 		totalFreeCount int64
 		balanceZero    bool
+		ratelimit      bool
 	}{
 		{
 			key: &apiKeyRecord{
@@ -178,7 +182,7 @@ func TestCallVerification(t *testing.T) {
 				Token:     "token",
 				Status:    keyStatusActive,
 			},
-			name:     "Wilcard scope",
+			name:     "Wildcard scope",
 			err:      nil,
 			priceRet: "free",
 		},
@@ -214,6 +218,21 @@ func TestCallVerification(t *testing.T) {
 			priceRet: "0",
 			price:    10000,
 			quota:    10,
+		},
+		{
+			key: &apiKeyRecord{
+				ID:        "id",
+				ApiKey:    "apikey",
+				Scopes:    []string{"*"},
+				UserID:    "userid",
+				AccID:     "accid",
+				Namespace: "micro",
+				Token:     "token",
+				Status:    keyStatusActive,
+			},
+			name:      "Rate limited",
+			err:       errors.New("v1.blocked", "Too Many Requests", 429),
+			ratelimit: true,
 		},
 	}
 
@@ -256,6 +275,16 @@ func TestCallVerification(t *testing.T) {
 				},
 			}
 
+			var incrVal int64 = 1
+			if tc.ratelimit {
+				incrVal = 101
+			}
+			rc, rmock := redismock.NewClientMock()
+			rmock.ExpectTxPipeline()
+			rmock.Regexp().ExpectIncr(".*").SetVal(incrVal)
+			rmock.Regexp().ExpectExpire(".*", 1*time.Second).SetVal(true)
+			rmock.ExpectTxPipelineExec()
+
 			v1api := &V1{
 				publicapiCache: &publicapiCache{
 					papi: &fakepapi,
@@ -266,16 +295,20 @@ func TestCallVerification(t *testing.T) {
 				usageCache: &usageCache{
 					usagesvc: &fakeusage,
 				},
+				limiter: &limiter{c: rc},
+				config: cfg{
+					RateLimit: 100,
+				},
 			}
 			v1api.publicapiCache.init()
 
 			pr, err := v1api.verifyCallAllowed(context.Background(), tc.key, "/v1/helloworld/Call")
-			g.Expect(pr).To(Equal(tc.priceRet))
 			if tc.err == nil {
 				g.Expect(err).To(BeNil())
 			} else {
 				g.Expect(err).To(Equal(tc.err))
 			}
+			g.Expect(pr).To(Equal(tc.priceRet))
 
 		})
 	}

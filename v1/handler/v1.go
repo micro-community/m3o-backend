@@ -52,7 +52,13 @@ type V1 struct {
 	usageCache     *usageCache
 	publicapiCache *publicapiCache
 	alerts         alertpb.AlertService
+	limiter        *limiter
+	config         cfg
 	projSvc        projects.ProjectsService
+}
+
+type cfg struct {
+	RateLimit int64
 }
 
 const (
@@ -102,6 +108,17 @@ func NewHandler(srv *service.Service) *V1 {
 	if err := papiCache.init(); err != nil {
 		log.Fatalf("Failed to init public API cache %s", err)
 	}
+	val, err = config.Get("micro.v1")
+	if err != nil {
+		log.Fatalf("Failed to load config")
+	}
+	var conf cfg
+	if err := val.Scan(&conf); err != nil {
+		log.Fatalf("Failed to load config %s", err)
+	}
+	if conf.RateLimit == 0 {
+		conf.RateLimit = 100
+	}
 	v1api := &V1{
 		accsvc:         authpb.NewAccountsService("auth", srv.Client()),
 		keyRecCache:    &keyRecCache,
@@ -113,6 +130,8 @@ func NewHandler(srv *service.Service) *V1 {
 			usagesvc: usage.NewUsageService("usage", srv.Client()),
 		},
 		alerts:  alertpb.NewAlertService("alert", srv.Client()),
+		limiter: &limiter{c: rc},
+		config:  conf,
 		projSvc: projects.NewProjectsService("projects", srv.Client()),
 	}
 	go v1api.consumeEvents()
@@ -286,6 +305,45 @@ func (v1 *V1) verifyCallAllowed(ctx context.Context, apiRec *apiKeyRecord, reqUR
 	// 1. Has the key been explicitly blocked?
 	// 2. Do the scopes of the token allow them to call the requested API? The name of the scopes correspond to the service
 	// 3. Do we have sufficient money to call this endpoint
+	// 4. Rate limiting
+
+	type balRes struct {
+		bal int64
+		err error
+	}
+	balChan := make(chan balRes)
+	go func() {
+		bal, err := v1.balanceCache.getBalance(ctx, apiRec.UserID)
+		balChan <- balRes{
+			bal: bal,
+			err: err,
+		}
+	}()
+
+	service, endpoint, err := getApiEndpointFromURL(reqURL)
+	if err != nil {
+		return "", err
+	}
+
+	type useRes struct {
+		use    map[string]int64
+		quotas map[string]int64
+		err    error
+	}
+	useChan := make(chan useRes)
+	go func() {
+		use, quotas, err := v1.usageCache.getMonthlyUsageTotal(ctx, apiRec.UserID, service, endpoint)
+		useChan <- useRes{
+			use:    use,
+			quotas: quotas,
+			err:    err,
+		}
+	}()
+
+	limitChan := make(chan error)
+	go func() {
+		limitChan <- v1.limiter.incr(apiRec.UserID, v1.config.RateLimit)
+	}()
 
 	if apiRec.Status == keyStatusBlocked {
 		return "", errBlocked(apiRec.StatusMessage)
@@ -308,25 +366,27 @@ func (v1 *V1) verifyCallAllowed(ctx context.Context, apiRec *apiKeyRecord, reqUR
 		return "", errBlocked("Insufficient privileges")
 	}
 
+	if limitErr := <-limitChan; limitErr != nil {
+		return "", errors.New("v1.blocked", "Too Many Requests", 429)
+	}
+
+	blockErr := errBlocked("Insufficient funds")
 	price, err := v1.checkPrice(ctx, reqURL)
 	if err != nil {
 		return "", errBlocked(err.Error())
 	}
 
-	service, endpoint, err := getApiEndpointFromURL(reqURL)
-
-	use, quotas, err := v1.usageCache.getMonthlyUsageTotal(ctx, apiRec.UserID, service, endpoint)
-	if err != nil {
+	useObj := <-useChan
+	if useObj.err != nil {
 		log.Errorf("Failed to retrieve usage %s", err)
 		// fail open
 		return "free", nil
 	}
 
-	blockErr := errBlocked("Insufficient funds")
 	if price == 0 {
 		// it's free!!
 		// have we hit our fair use quota for the month?
-		if use["totalfree"] < quotas["totalfree"] {
+		if useObj.use["totalfree"] < useObj.quotas["totalfree"] {
 			return "free", nil
 		}
 		// start charging the unit price
@@ -338,21 +398,21 @@ func (v1 *V1) verifyCallAllowed(ctx context.Context, apiRec *apiKeyRecord, reqUR
 	// usage name looks like "cache$Cache.Increment"
 	usageName := fmt.Sprintf("%s$%s", service, endpoint)
 
-	count := use[usageName]
+	count := useObj.use[usageName]
 	quota := v1.publicapiCache.getQuota(service, endpoint)
 	if count < quota {
 		// still within free quota
 		return "0", nil
 	}
 
+	balObj := <-balChan
 	// no quota left, check balance to see if we can pay for this invocation
-	bal, err := v1.balanceCache.getBalance(ctx, apiRec.UserID)
-	if err != nil {
+	if balObj.err != nil {
 		log.Errorf("Failed to retrieve balance for customer %s %s", apiRec.UserID, err)
 		// fail open
 		return fmt.Sprintf("%d", price), nil
 	}
-	if bal >= price {
+	if balObj.bal >= price {
 		return fmt.Sprintf("%d", price), nil
 	}
 
