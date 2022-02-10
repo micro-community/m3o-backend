@@ -6,10 +6,12 @@ import (
 
 	"github.com/google/uuid"
 	billing "github.com/m3o/services/billing/proto"
+	customer "github.com/m3o/services/customers/proto"
 	"github.com/m3o/services/pkg/auth"
 	custevents "github.com/m3o/services/pkg/events/proto/customers"
 	stripe "github.com/m3o/services/stripe/proto"
 	"github.com/micro/micro/v3/service"
+	"github.com/micro/micro/v3/service/client"
 	"github.com/micro/micro/v3/service/config"
 	"github.com/micro/micro/v3/service/errors"
 	"github.com/micro/micro/v3/service/events"
@@ -20,6 +22,7 @@ import (
 
 type Billing struct {
 	stripeSvc stripe.StripeService
+	custSvc   customer.CustomersService
 	tiers     map[string]string
 }
 
@@ -51,6 +54,7 @@ func New(svc *service.Service) *Billing {
 	bill := &Billing{
 		stripeSvc: stripe.NewStripeService("stripe", svc.Client()),
 		tiers:     tiers,
+		custSvc:   customer.NewCustomersService("customers", svc.Client()),
 	}
 	bill.consumeEvents()
 	return bill
@@ -145,6 +149,7 @@ func (b *Billing) SubscribeTier(ctx context.Context, request *billing.SubscribeT
 func (b *Billing) ReadAccount(ctx context.Context, request *billing.ReadAccountRequest, response *billing.ReadAccountResponse) error {
 	method := "billing.ReadAccount"
 	key := ""
+	adminID := ""
 	acc, err := auth.VerifyMicroAdmin(ctx, method)
 	if err != nil {
 		acc, err = auth.VerifyMicroCustomer(ctx, method)
@@ -152,10 +157,12 @@ func (b *Billing) ReadAccount(ctx context.Context, request *billing.ReadAccountR
 			return err
 		}
 		key = adminKey(acc.ID)
+		adminID = acc.ID
 	} else {
 		if len(request.Id) > 0 {
 			key = billingAccKey(request.Id)
 		} else if len(request.AdminId) > 0 {
+			adminID = request.AdminId
 			key = adminKey(request.AdminId)
 		} else {
 			return errors.BadRequest(method, "Missing id or admin_id param")
@@ -169,10 +176,18 @@ func (b *Billing) ReadAccount(ctx context.Context, request *billing.ReadAccountR
 	}
 	var billingAcc BillingAccount
 	if len(recs) == 0 {
+		if adminID == "" {
+			return errors.NotFound(method, "Not found")
+		}
+		// make sure we're not trying to create an account for someone that doesn't exist
+		if _, err := b.custSvc.Read(ctx, &customer.ReadRequest{Id: adminID}, client.WithAuthToken()); err != nil {
+			return errors.NotFound(method, "Not found")
+		}
+
 		log.Infof("No billing account found for user %s, creating", acc.ID)
 		billingAcc = BillingAccount{
 			ID:      uuid.New().String(),
-			Admins:  []string{acc.ID},
+			Admins:  []string{adminID},
 			PriceID: "free",
 		}
 		if err := b.storeBillingAccount(&billingAcc); err != nil {
