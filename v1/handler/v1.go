@@ -626,6 +626,11 @@ func (v1 *V1) Endpoint(ctx context.Context, stream server.Stream) (retErr error)
 					}}, client.WithAuthToken())
 
 			}()
+			if strings.Contains(err.Error(), "not assignable") {
+				// return something nicer, making massive assumption that panic was caused by badly formed request
+				return errors.BadRequest("v1", "Request message malformed, please check and try again")
+			}
+			return errors.InternalServerError("v1", "Error processing request. If the problem persists please contact support")
 		}
 		return err
 	}
