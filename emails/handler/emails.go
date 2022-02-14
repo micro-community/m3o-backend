@@ -72,7 +72,7 @@ func (e *Emails) Send(ctx context.Context, request *emails.SendRequest, response
 			return errors.BadRequest("emails.send.templatedata", "Unable to unmarshal template data")
 		}
 	}
-	if err := e.sendEmail(request.From, request.To, request.TemplateId, templateData); err != nil {
+	if err := e.sendEmail(request.From, request.To, request.TemplateId, request.SendAt, templateData); err != nil {
 		return errors.InternalServerError("emails.sendemail", "Error sending email")
 	}
 	return nil
@@ -80,7 +80,7 @@ func (e *Emails) Send(ctx context.Context, request *emails.SendRequest, response
 
 // sendEmail sends an email invite via the sendgrid API using the
 // pre-designed email template. Docs: https://bit.ly/2VYPQD1
-func (e *Emails) sendEmail(from, to, templateID string, templateData map[string]interface{}) error {
+func (e *Emails) sendEmail(from, to, templateID string, sendAt int64, templateData map[string]interface{}) error {
 	if !e.config.SendingEnabled {
 		masked := to
 		if len(to) > 4 {
@@ -119,6 +119,9 @@ func (e *Emails) sendEmail(from, to, templateID string, templateData map[string]
 	}
 	if len(e.config.PoolName) > 0 {
 		reqMap["ip_pool_name"] = e.config.PoolName
+	}
+	if sendAt > 0 {
+		reqMap["send_at"] = sendAt
 	}
 
 	reqBody, _ := json.Marshal(reqMap)

@@ -66,12 +66,15 @@ type ResetToken struct {
 type sendgridConf struct {
 	TemplateID         string `json:"template_id"`
 	RecoveryTemplateID string `json:"recovery_template_id"`
+	WelcomeTemplateID  string `json:"welcome_template_id"`
 }
 
 type conf struct {
-	Sendgrid  sendgridConf `json:"sendgrid"`
-	AllowList []string     `json:"allow_list"`
-	BlockList []string     `json:"block_list"`
+	Sendgrid            sendgridConf `json:"sendgrid"`
+	AllowList           []string     `json:"allow_list"`
+	BlockList           []string     `json:"block_list"`            // block ANY emails being sent to these emails
+	EngagementBlockList []string     `json:"engagement_block_list"` // allow sign up emails but block engagement emails like welcome etc
+	WelcomeDelay        string       `json:"welcome_delay"`         // delay between creation of customer and sending welcome email (time duration e.g. 24h)
 }
 
 func NewSignup(srv *service.Service, auth auth.Auth) *Signup {
