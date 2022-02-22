@@ -98,7 +98,7 @@ func (c *counter) deleteUser(ctx context.Context, userID string) error {
 func (c *counter) listForUser(userID string, t time.Time) ([]listEntry, error) {
 	ctx := context.Background()
 	keyPrefix := fmt.Sprintf("%s:%s:%s:", prefixCounter, userID, t.Format("20060102"))
-	sc := c.redisClient.Scan(ctx, 0, keyPrefix+"*", 0)
+	sc := c.redisClient.Scan(ctx, 0, keyPrefix+"*", 500)
 	if err := sc.Err(); err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (c *counter) listForUser(userID string, t time.Time) ([]listEntry, error) {
 func (c *counter) listMonthliesForUser(userID string, t time.Time) ([]listEntry, error) {
 	ctx := context.Background()
 	keyPrefix := fmt.Sprintf("%s:%s:%s:", prefixCounter, userID, t.Format("200601"))
-	sc := c.redisClient.Scan(ctx, 0, keyPrefix+"*", 0)
+	sc := c.redisClient.Scan(ctx, 0, keyPrefix+"*", 500)
 	if err := sc.Err(); err != nil {
 		return nil, err
 	}
