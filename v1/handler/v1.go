@@ -521,7 +521,7 @@ func parseContentType(ct string) string {
 }
 
 // Endpoint is a catch all for endpoints
-func (v1 *V1) Endpoint(ctx context.Context, stream server.Stream) (retErr error) {
+func (v1 *V1) Endpoint(ctx context.Context, stream server.Stream) error {
 	// check api key
 	defer stream.Close()
 
@@ -530,7 +530,16 @@ func (v1 *V1) Endpoint(ctx context.Context, stream server.Stream) (retErr error)
 		return errUnauthorized
 	}
 
-	key, apiRec, err := v1.readAPIRecordByAPIKey(ctx, md["Authorization"])
+	authKey := md["Authorization"]
+	if len(authKey) == 0 {
+		authKey = md["Sec-Websocket-Protocol"]
+		if len(authKey) == 0 {
+			return errUnauthorized
+		}
+		authKey = "Bearer " + authKey
+	}
+
+	key, apiRec, err := v1.readAPIRecordByAPIKey(ctx, authKey)
 	if err != nil {
 		return err
 	}
