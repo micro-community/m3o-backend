@@ -39,7 +39,7 @@ type rawFrame struct {
 }
 
 func serveStream(ctx context.Context, stream server.Stream, service, endpoint string, svcs []*registry.Service, apiRec *apiKeyRecord, price string) error {
-	// serve as websocket if thats the case
+	// serve as websocket if that's the case
 	md, ok := metadata.FromContext(ctx)
 	if !ok {
 		return errInternal
@@ -245,7 +245,6 @@ func (s *stream) bufToClientLoop(cancel context.CancelFunc, wg *sync.WaitGroup, 
 	defer func() {
 		cancel()
 		wg.Done()
-		s.stream.Close()
 	}()
 	for {
 		select {
@@ -274,29 +273,39 @@ func (s *stream) clientToServerLoop(cancel context.CancelFunc, wg *sync.WaitGrou
 
 	md, _ := metadata.FromContext(s.ctx)
 	reqURL, _ := md.Get("url")
+	ch := make(chan interface{})
+	go func() {
+		defer close(ch)
+		for {
+			var request interface{}
+			switch s.messageType {
+			case websocket.TextMessage:
+				request = &json.RawMessage{}
+				if err := s.serverStream.Recv(request); err != nil {
+					logger.Errorf("Error receiving from stream %s", err)
+					return
+				}
+			default:
+				var b []byte
+				if err := s.serverStream.Recv(b); err != nil {
+					logger.Errorf("Error receiving from stream %s", err)
+					return
+				}
+				request = &rawFrame{Data: b}
+			}
+			ch <- request
+		}
+	}()
 
 	for {
+		var request interface{}
 		select {
 		case <-stopCtx.Done():
 			return
-		default:
-		}
-
-		var request interface{}
-		switch s.messageType {
-		case websocket.TextMessage:
-			request = &json.RawMessage{}
-			if err := s.serverStream.Recv(request); err != nil {
-				logger.Errorf("Error receiving from stream %s", err)
+		case request = <-ch:
+			if request == nil {
 				return
 			}
-		default:
-			var b []byte
-			if err := s.serverStream.Recv(b); err != nil {
-				logger.Errorf("Error receiving from stream %s", err)
-				return
-			}
-			request = &rawFrame{Data: b}
 		}
 
 		if err := s.stream.Send(request); err != nil {
