@@ -116,11 +116,11 @@ func (b *Balance) processChargeSucceeded(ctx context.Context, ev *stripeevents.C
 	// if a project is deleted we need to reallocate the balance. If only one project left sweep everything in to
 	// the remaining project. If multiple then sweep it back in to the parent account balance
 	amt := ev.Amount * 10000
-	description := "Funds added"
-	if srsp.Payment.Description != "M3O funds" {
+	description := "Credit added"
+	if srsp.Payment.Description != "M3O credit" {
 		// this is a subscription payment, apply margin
 		amt = int64(math.Ceil(float64(amt) * (1 - b.margin)))
-		description = "Subscription funds added"
+		description = "Subscription credit added"
 	}
 
 	adj, err := storeAdjustment(ev.CustomerId, amt, ev.CustomerId, description, true, map[string]string{

@@ -383,7 +383,7 @@ func (v1 *V1) verifyCallAllowed(ctx context.Context, apiRec *apiKeyRecord, reqUR
 		return "", errors.New("v1.blocked", "Too Many Requests", 429)
 	}
 
-	blockErr := errBlocked("Insufficient funds")
+	blockErr := errBlocked("Insufficient credit")
 	price, err := v1.checkPrice(ctx, reqURL)
 	if err != nil {
 		return "", errBlocked(err.Error())

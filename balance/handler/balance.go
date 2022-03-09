@@ -79,7 +79,7 @@ type publicAPICacheEntry struct {
 	created time.Time
 }
 
-// Adjustment represents a balance adjustment (not including normal API usage). e.g. funds being added, promo codes, manual adjustment for customer service etc
+// Adjustment represents a balance adjustment (not including normal API usage). e.g. credit being added, promo codes, manual adjustment for customer service etc
 type Adjustment struct {
 	ID         string
 	Created    time.Time

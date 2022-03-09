@@ -485,7 +485,7 @@ func (s *Stripe) ChargeCard(ctx context.Context, request *stripepb.ChargeCardReq
 		Amount:        stripe.Int64(request.Amount),
 		Currency:      stripe.String(string(stripe.CurrencyGBP)),
 		Customer:      stripe.String(cm.StripeID),
-		Description:   stripe.String("M3O funds"),
+		Description:   stripe.String("M3O credit"),
 		PaymentMethod: stripe.String(request.Id),
 	})
 	if err != nil {
