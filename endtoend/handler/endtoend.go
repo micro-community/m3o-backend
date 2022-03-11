@@ -444,6 +444,7 @@ func (e *Endtoend) signupAndRunExamples() E2EResult {
 					// skip
 					continue
 				}
+				time.Sleep(100 * time.Millisecond) // free tier request limit
 				b, err := json.Marshal(ex.Request)
 				if err != nil {
 					log.Errorf("Failed to marshal example request for %s %s %s %s", api.Name, endpointName, ex.Title, err)
