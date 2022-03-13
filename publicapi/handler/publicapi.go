@@ -69,14 +69,19 @@ func (p *Publicapi) Publish(ctx context.Context, request *pb.PublishRequest, res
 		isUpdate = true
 	}
 
-	acc, _ := auth.AccountFromContext(ctx)
+	ownerId := request.Api.OwnerId
+	if len(ownerId) == 0 {
+		acc, _ := auth.AccountFromContext(ctx)
+		ownerId = acc.ID
+	}
+
 	ae := &APIEntry{
 		ID:           id,
 		Name:         request.Api.Name,
 		Description:  request.Api.Description,
 		OpenAPIJSON:  request.Api.OpenApiJson,
 		Pricing:      request.Api.Pricing,
-		OwnerID:      acc.ID,
+		OwnerID:      ownerId,
 		ExamplesJSON: request.Api.ExamplesJson,
 		Category:     request.Api.Category,
 		Icon:         request.Api.Icon,
