@@ -6,6 +6,7 @@ package usage
 import (
 	fmt "fmt"
 	proto "github.com/golang/protobuf/proto"
+	_ "google.golang.org/protobuf/types/known/structpb"
 	math "math"
 )
 
@@ -42,8 +43,18 @@ func NewUsageEndpoints() []*api.Endpoint {
 // Client API for Usage service
 
 type UsageService interface {
+	// Returns the usage across all APIs historically, detail response includes at endpoint level. Powers the UI
 	Read(ctx context.Context, in *ReadRequest, opts ...client.CallOption) (*ReadResponse, error)
 	Sweep(ctx context.Context, in *SweepRequest, opts ...client.CallOption) (*SweepResponse, error)
+	DeleteCustomer(ctx context.Context, in *DeleteCustomerRequest, opts ...client.CallOption) (*DeleteCustomerResponse, error)
+	SaveEvent(ctx context.Context, in *SaveEventRequest, opts ...client.CallOption) (*SaveEventResponse, error)
+	ListEvents(ctx context.Context, in *ListEventsRequest, opts ...client.CallOption) (*ListEventsResponse, error)
+	// Returns the ranking of top 10 users for each API
+	ListAPIRanks(ctx context.Context, in *ListAPIRanksRequest, opts ...client.CallOption) (*ListAPIRanksResponse, error)
+	// Returns the usage for this month. Detail response breaks down across all endpoints
+	ReadMonthlyTotal(ctx context.Context, in *ReadMonthlyTotalRequest, opts ...client.CallOption) (*ReadMonthlyTotalResponse, error)
+	// Returns monthly usage per specified endpoints, used by V1 api
+	ReadMonthly(ctx context.Context, in *ReadMonthlyRequest, opts ...client.CallOption) (*ReadMonthlyResponse, error)
 }
 
 type usageService struct {
@@ -78,17 +89,93 @@ func (c *usageService) Sweep(ctx context.Context, in *SweepRequest, opts ...clie
 	return out, nil
 }
 
+func (c *usageService) DeleteCustomer(ctx context.Context, in *DeleteCustomerRequest, opts ...client.CallOption) (*DeleteCustomerResponse, error) {
+	req := c.c.NewRequest(c.name, "Usage.DeleteCustomer", in)
+	out := new(DeleteCustomerResponse)
+	err := c.c.Call(ctx, req, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *usageService) SaveEvent(ctx context.Context, in *SaveEventRequest, opts ...client.CallOption) (*SaveEventResponse, error) {
+	req := c.c.NewRequest(c.name, "Usage.SaveEvent", in)
+	out := new(SaveEventResponse)
+	err := c.c.Call(ctx, req, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *usageService) ListEvents(ctx context.Context, in *ListEventsRequest, opts ...client.CallOption) (*ListEventsResponse, error) {
+	req := c.c.NewRequest(c.name, "Usage.ListEvents", in)
+	out := new(ListEventsResponse)
+	err := c.c.Call(ctx, req, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *usageService) ListAPIRanks(ctx context.Context, in *ListAPIRanksRequest, opts ...client.CallOption) (*ListAPIRanksResponse, error) {
+	req := c.c.NewRequest(c.name, "Usage.ListAPIRanks", in)
+	out := new(ListAPIRanksResponse)
+	err := c.c.Call(ctx, req, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *usageService) ReadMonthlyTotal(ctx context.Context, in *ReadMonthlyTotalRequest, opts ...client.CallOption) (*ReadMonthlyTotalResponse, error) {
+	req := c.c.NewRequest(c.name, "Usage.ReadMonthlyTotal", in)
+	out := new(ReadMonthlyTotalResponse)
+	err := c.c.Call(ctx, req, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *usageService) ReadMonthly(ctx context.Context, in *ReadMonthlyRequest, opts ...client.CallOption) (*ReadMonthlyResponse, error) {
+	req := c.c.NewRequest(c.name, "Usage.ReadMonthly", in)
+	out := new(ReadMonthlyResponse)
+	err := c.c.Call(ctx, req, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Server API for Usage service
 
 type UsageHandler interface {
+	// Returns the usage across all APIs historically, detail response includes at endpoint level. Powers the UI
 	Read(context.Context, *ReadRequest, *ReadResponse) error
 	Sweep(context.Context, *SweepRequest, *SweepResponse) error
+	DeleteCustomer(context.Context, *DeleteCustomerRequest, *DeleteCustomerResponse) error
+	SaveEvent(context.Context, *SaveEventRequest, *SaveEventResponse) error
+	ListEvents(context.Context, *ListEventsRequest, *ListEventsResponse) error
+	// Returns the ranking of top 10 users for each API
+	ListAPIRanks(context.Context, *ListAPIRanksRequest, *ListAPIRanksResponse) error
+	// Returns the usage for this month. Detail response breaks down across all endpoints
+	ReadMonthlyTotal(context.Context, *ReadMonthlyTotalRequest, *ReadMonthlyTotalResponse) error
+	// Returns monthly usage per specified endpoints, used by V1 api
+	ReadMonthly(context.Context, *ReadMonthlyRequest, *ReadMonthlyResponse) error
 }
 
 func RegisterUsageHandler(s server.Server, hdlr UsageHandler, opts ...server.HandlerOption) error {
 	type usage interface {
 		Read(ctx context.Context, in *ReadRequest, out *ReadResponse) error
 		Sweep(ctx context.Context, in *SweepRequest, out *SweepResponse) error
+		DeleteCustomer(ctx context.Context, in *DeleteCustomerRequest, out *DeleteCustomerResponse) error
+		SaveEvent(ctx context.Context, in *SaveEventRequest, out *SaveEventResponse) error
+		ListEvents(ctx context.Context, in *ListEventsRequest, out *ListEventsResponse) error
+		ListAPIRanks(ctx context.Context, in *ListAPIRanksRequest, out *ListAPIRanksResponse) error
+		ReadMonthlyTotal(ctx context.Context, in *ReadMonthlyTotalRequest, out *ReadMonthlyTotalResponse) error
+		ReadMonthly(ctx context.Context, in *ReadMonthlyRequest, out *ReadMonthlyResponse) error
 	}
 	type Usage struct {
 		usage
@@ -107,4 +194,28 @@ func (h *usageHandler) Read(ctx context.Context, in *ReadRequest, out *ReadRespo
 
 func (h *usageHandler) Sweep(ctx context.Context, in *SweepRequest, out *SweepResponse) error {
 	return h.UsageHandler.Sweep(ctx, in, out)
+}
+
+func (h *usageHandler) DeleteCustomer(ctx context.Context, in *DeleteCustomerRequest, out *DeleteCustomerResponse) error {
+	return h.UsageHandler.DeleteCustomer(ctx, in, out)
+}
+
+func (h *usageHandler) SaveEvent(ctx context.Context, in *SaveEventRequest, out *SaveEventResponse) error {
+	return h.UsageHandler.SaveEvent(ctx, in, out)
+}
+
+func (h *usageHandler) ListEvents(ctx context.Context, in *ListEventsRequest, out *ListEventsResponse) error {
+	return h.UsageHandler.ListEvents(ctx, in, out)
+}
+
+func (h *usageHandler) ListAPIRanks(ctx context.Context, in *ListAPIRanksRequest, out *ListAPIRanksResponse) error {
+	return h.UsageHandler.ListAPIRanks(ctx, in, out)
+}
+
+func (h *usageHandler) ReadMonthlyTotal(ctx context.Context, in *ReadMonthlyTotalRequest, out *ReadMonthlyTotalResponse) error {
+	return h.UsageHandler.ReadMonthlyTotal(ctx, in, out)
+}
+
+func (h *usageHandler) ReadMonthly(ctx context.Context, in *ReadMonthlyRequest, out *ReadMonthlyResponse) error {
+	return h.UsageHandler.ReadMonthly(ctx, in, out)
 }

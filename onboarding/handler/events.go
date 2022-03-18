@@ -3,12 +3,14 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
+	"strings"
 	"time"
 
-	balance "github.com/m3o/services/balance/proto"
-	onboarding "github.com/m3o/services/onboarding/proto"
+	customer "github.com/m3o/services/customers/proto"
+	emails "github.com/m3o/services/emails/proto"
+	pevents "github.com/m3o/services/pkg/events"
+	custpb "github.com/m3o/services/pkg/events/proto/customers"
 	"github.com/micro/micro/v3/service"
 	"github.com/micro/micro/v3/service/client"
 	"github.com/micro/micro/v3/service/config"
@@ -17,9 +19,9 @@ import (
 )
 
 type Onboarding struct {
-	balSvc       balance.BalanceService
-	promoCredit  int64
-	promoMessage string
+	emailSvc emails.EmailsService
+	custSvc  customer.CustomersService
+	cfg      conf
 }
 
 func NewOnboarding(svc *service.Service) *Onboarding {
@@ -31,90 +33,74 @@ func NewOnboarding(svc *service.Service) *Onboarding {
 	if err := v.Scan(&cfg); err != nil {
 		log.Fatalf("Failed to load config %s", err)
 	}
-	if cfg.PromoCredit == 0 || len(cfg.PromoMessage) == 0 {
-		log.Fatalf("Missing config")
-	}
 	o := &Onboarding{
-		balSvc:       balance.NewBalanceService("balance", svc.Client()),
-		promoCredit:  cfg.PromoCredit,
-		promoMessage: cfg.PromoMessage,
+		emailSvc: emails.NewEmailsService("emails", svc.Client()),
+		custSvc:  customer.NewCustomersService("customers", svc.Client()),
+		cfg:      cfg,
 	}
 	o.consumeEvents()
 	return o
 }
 
 func (o *Onboarding) consumeEvents() {
-	processTopic := func(topic string, handler func(ch <-chan mevents.Event)) {
-		var evs <-chan mevents.Event
-		start := time.Now()
-		for {
-			var err error
-			evs, err = mevents.Consume(topic,
-				mevents.WithAutoAck(false, 30*time.Second),
-				mevents.WithRetryLimit(10), // 10 retries * 30 secs ackWait gives us 5 mins of tolerance for issues
-				mevents.WithGroup(fmt.Sprintf("%s-%s", "onboarding", topic)))
-			if err == nil {
-				handler(evs)
-				start = time.Now()
-				continue // if for some reason evs closes we loop and try subscribing again
-			}
-			// TODO fix me
-			if time.Since(start) > 2*time.Minute {
-				logger.Fatalf("Failed to subscribe to topic %s: %s", topic, err)
-			}
-			logger.Warnf("Unable to subscribe to topic %s. Will retry in 20 secs. %s", topic, err)
-			time.Sleep(20 * time.Second)
-		}
-	}
-	go processTopic(topic, o.processOnboardingEvents)
+	go pevents.ProcessTopic(custpb.Topic, "onboarding", o.processCustomerEvents)
 }
 
-func (o *Onboarding) processOnboardingEvents(ch <-chan mevents.Event) {
-	logger.Infof("Starting to process onboarding events")
-	for {
-		t := time.NewTimer(2 * time.Minute)
-		var ev mevents.Event
-		select {
-		case ev = <-ch:
-			t.Stop()
-			if len(ev.ID) == 0 {
-				// channel closed
-				logger.Infof("Channel closed, retrying stream connection")
-				return
-			}
-		case <-t.C:
-			// safety net in case we stop receiving messages for some reason
-			logger.Infof("No messages received for last 2 minutes retrying connection")
-			return
-		}
-
-		var ve onboarding.Event
-		if err := json.Unmarshal(ev.Payload, &ve); err != nil {
-			ev.Nack()
-			logger.Errorf("Error unmarshalling onboarding event: $s", err)
-			continue
-		}
-		switch ve.Type {
-		case "newSignup":
-			if err := o.processSignup(ve.NewSignup); err != nil {
-				ev.Nack()
-				logger.Errorf("Error processing signup event %s", err)
-				continue
-			}
-		default:
-			logger.Infof("Unrecognised event %+v", ve)
-		}
-		ev.Ack()
+func (o *Onboarding) processCustomerEvents(ev mevents.Event) error {
+	ctx := context.Background()
+	ce := &custpb.Event{}
+	if err := json.Unmarshal(ev.Payload, ce); err != nil {
+		logger.Errorf("Error unmarshalling customer event: $s", err)
+		return nil
 	}
+	switch ce.Type {
+	case custpb.EventType_EventTypeCreated:
+		if err := o.processCustomerCreate(ctx, ce); err != nil {
+			logger.Errorf("Error processing request event %s", err)
+			return err
+		}
+	default:
+		logger.Infof("Skipping event %+v", ce)
+	}
+	return nil
+
 }
 
-func (o *Onboarding) processSignup(ev *onboarding.NewSignupEvent) error {
-	// add a promo credit to their balance
-	_, err := o.balSvc.Increment(context.Background(), &balance.IncrementRequest{
-		CustomerId: ev.Id,
-		Delta:      o.promoCredit,
-		Visible:    true,
-		Reference:  o.promoMessage,
-	}, client.WithAuthToken())
-	return err
+func (o *Onboarding) processCustomerCreate(ctx context.Context, event *custpb.Event) error {
+	// Send welcome email
+	email := event.Customer.Email
+	if len(email) == 0 {
+		// look it up
+		rsp, err := o.custSvc.Read(ctx, &customer.ReadRequest{Id: event.Customer.Id}, client.WithAuthToken())
+		if err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "not found") {
+				return nil
+			}
+			return err
+		}
+		email = rsp.Customer.Email
+	}
+	for _, blocked := range o.cfg.EngagementBlockList {
+		if blocked == email {
+			return nil
+		}
+	}
+
+	delay := o.cfg.WelcomeDelay
+	if len(delay) == 0 {
+		delay = "24h"
+	}
+	dur, _ := time.ParseDuration(delay)
+
+	// TODO add a block list
+	if _, err := o.emailSvc.Send(ctx, &emails.SendRequest{
+		To:         email,
+		TemplateId: o.cfg.Sendgrid.WelcomeTemplateID,
+		SendAt:     time.Now().Add(dur).Unix(),
+	}, client.WithAuthToken()); err != nil {
+		logger.Errorf("Error sending mail %s", err)
+		return err
+	}
+
+	return nil
 }

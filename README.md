@@ -1,3 +1,11 @@
+<p align="center">
+	<a href="https://discord.gg/TBR9bRjd6Z">
+		<img src="https://discordapp.com/api/guilds/861917584437805127/widget.png?style=banner2" alt="Discord Banner"/>
+	</a>
+</p>
+
+---
+
 # Backend
 
 This is the backend for the M3O Platform.
@@ -12,8 +20,8 @@ to offer Micro Cloud. This includes things like customer management, billing, et
 We depend on Micro using the "platform" profile. It runs on kubernetes with the resources below:
 
 - Etcd
-- NATS
-- CockroachDB
+- Redis
+- Postgres
 
 ## Design
 
@@ -22,6 +30,25 @@ All services are Micro services written using the Micro framework without except
 - Services speak to each other via RPC
 - Messages are used for async eventing
 - Infrastructure usage occurs only through Micro
+
+## Events
+All events should be defined in protobuf under `pkg/events/proto/<topic_name>`. The directory should contain the following files.
+### `events.proto` 
+This should define 
+- `enum EventType` - enumerates all the event types available
+- `message Event` - which should contain at least the field `EnumType type`. Any data specific to the event should be defined in separate fields in the `Event` message. You may also find it useful to have data that is common to all events in a common field. For example, the events on the `customers` stream have a `Customer` field which at a minimum contains the customer ID. The events then have event specific messages for any other data, e.g. the field `Created` contains data associated with the customer creation event.  
+   
+### `constants.go`
+This file should define the topic name so that publishers/consumers can reference this const rather than hand coding the topic name (with the potential for errors). e.g. 
+
+```
+const Topic = "customers"
+```
+
+See existing directories for examples.
+
+### Mixpanel
+Events are forwarded to Mixpanel for analysis. Due to the way enum types are converted to their string representation we need to redeploy the Mixpanel service every time we add events otherwise they will get incorrectly reported.
 
 ## Naming
 
@@ -69,8 +96,3 @@ Please sign-off contributions with DCO sign-off
 ```
 git commit --signoff 'Signed-off-by: John Doe <john@example.com>`
 ```
-
-## License
-
-See [LICENSE](LICENSE) which makes use of [Polyform Strict](https://polyformproject.org/licenses/strict/1.0.0/). 
-For commercial use please email [contact@m3o.com](mailto:contact@m3o.com). 

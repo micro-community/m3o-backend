@@ -11,6 +11,10 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/google/uuid"
+	custpb "github.com/m3o/services/customers/proto"
+	m3oauth "github.com/m3o/services/pkg/auth"
+	publicapipb "github.com/m3o/services/publicapi/proto"
 	pb "github.com/m3o/services/usage/proto"
 	"github.com/micro/micro/v3/service"
 	"github.com/micro/micro/v3/service/auth"
@@ -18,92 +22,30 @@ import (
 	"github.com/micro/micro/v3/service/errors"
 	log "github.com/micro/micro/v3/service/logger"
 	"github.com/micro/micro/v3/service/store"
+	dbproto "github.com/micro/services/db/proto"
 )
 
 const (
 	prefixCounter         = "usage-service/counter"
 	prefixUsageByCustomer = "usageByCustomer" // customer ID / date
 	counterTTL            = 48 * time.Hour
+	counterMonthlyTTL     = 40 * 24 * time.Hour
+
+	totalFree = "totalfree"
 )
 
-type counter struct {
-	sync.RWMutex
-	redisClient *redis.Client
-}
-
-func (c *counter) incr(userID, path string, delta int64, t time.Time) (int64, error) {
-	t = t.UTC()
-	ctx := context.Background()
-	key := fmt.Sprintf("%s:%s:%s:%s", prefixCounter, userID, t.Format("20060102"), path)
-	pipe := c.redisClient.TxPipeline()
-	incr := pipe.IncrBy(ctx, key, delta)
-	pipe.Expire(ctx, key, counterTTL) // make sure we expire the counters
-	_, err := pipe.Exec(ctx)
-	if err != nil {
-		return 0, err
-	}
-	return incr.Result()
-}
-
-func (c *counter) decr(userID, path string, delta int64, t time.Time) (int64, error) {
-	t = t.UTC()
-	ctx := context.Background()
-	key := fmt.Sprintf("%s:%s:%s:%s", prefixCounter, userID, t.Format("20060102"), path)
-	pipe := c.redisClient.TxPipeline()
-	decr := pipe.DecrBy(ctx, key, delta)
-	pipe.Expire(ctx, key, counterTTL) // make sure we expire counters
-	_, err := pipe.Exec(ctx)
-	if err != nil {
-		return 0, err
-	}
-	return decr.Result()
-}
-
-func (c *counter) read(userID, path string, t time.Time) (int64, error) {
-	t = t.UTC()
-	ret, err := c.redisClient.Get(context.Background(), fmt.Sprintf("%s:%s:%s:%s", prefixCounter, userID, t.Format("20060102"), path)).Int64()
-	if err == redis.Nil {
-		return 0, nil
-	}
-	return ret, err
-}
-
-type listEntry struct {
-	Service string
-	Count   int64
-}
-
-func (c *counter) listForUser(userID string, t time.Time) ([]listEntry, error) {
-	ctx := context.Background()
-	keyPrefix := fmt.Sprintf("%s:%s:%s:", prefixCounter, userID, t.Format("20060102"))
-	sc := c.redisClient.Scan(ctx, 0, keyPrefix+"*", 0)
-	if err := sc.Err(); err != nil {
-		return nil, err
-	}
-	iter := sc.Iterator()
-	res := []listEntry{}
-	for {
-		if !iter.Next(ctx) {
-			break
-		}
-		key := iter.Val()
-		i, err := c.redisClient.Get(ctx, key).Int64()
-		if err != nil {
-			return nil, err
-		}
-		res = append(res, listEntry{
-			Service: strings.TrimPrefix(key, keyPrefix),
-			Count:   i,
-		})
-	}
-	return res, iter.Err()
-}
-
 type UsageSvc struct {
-	c *counter
+	sync.RWMutex
+	c               *counter
+	dbService       dbproto.DbService
+	custService     custpb.CustomersService
+	papiService     publicapipb.PublicapiService
+	rankCache       []*pb.APIRankItem
+	globalRankCache []*pb.APIRankUserItem
+	quotas          map[string]int64
 }
 
-func NewHandler(svc *service.Service) *UsageSvc {
+func NewHandler(svc *service.Service, dbService dbproto.DbService) *UsageSvc {
 	redisConfig := struct {
 		Address  string
 		User     string
@@ -127,23 +69,39 @@ func NewHandler(svc *service.Service) *UsageSvc {
 			InsecureSkipVerify: false,
 		},
 	})
-	p := &UsageSvc{
-		c: &counter{redisClient: rc},
+	quotas := map[string]int64{}
+	val, err = config.Get("micro.usage.quotas")
+	if err != nil {
+		log.Fatalf("No quota config found")
 	}
-	go p.consumeEvents()
+	if err := val.Scan(&quotas); err != nil {
+		log.Fatalf("Error parsing quota config %s", err)
+	}
+	p := &UsageSvc{
+		c:           &counter{redisClient: rc},
+		dbService:   dbService,
+		rankCache:   []*pb.APIRankItem{},
+		custService: custpb.NewCustomersService("customers", svc.Client()),
+		papiService: publicapipb.NewPublicapiService("publicapi", svc.Client()),
+		quotas:      quotas,
+	}
+	p.RankingCron()
+	p.consumeEvents()
 	return p
 }
 
 func (p *UsageSvc) Read(ctx context.Context, request *pb.ReadRequest, response *pb.ReadResponse) error {
+	method := "usage.Read"
+	errInternal := errors.InternalServerError(method, "Error retrieving usage")
 	acc, ok := auth.AccountFromContext(ctx)
 	if !ok {
-		return errors.Unauthorized("usage.Read", "Unauthorized")
+		return errors.Unauthorized(method, "Unauthorized")
 	}
 	if len(request.CustomerId) == 0 {
 		request.CustomerId = acc.ID
 	}
 	if acc.ID != request.CustomerId {
-		err := verifyMicroAdmin(ctx, "usage.Read")
+		_, err := m3oauth.VerifyMicroAdmin(ctx, method)
 		if err != nil {
 			return err
 		}
@@ -153,7 +111,7 @@ func (p *UsageSvc) Read(ctx context.Context, request *pb.ReadRequest, response *
 	liveEntries, err := p.c.listForUser(request.CustomerId, now)
 	if err != nil {
 		log.Errorf("Error retrieving usage %s", err)
-		return errors.InternalServerError("usage.Read", "Error retrieving usage")
+		return errInternal
 	}
 
 	response.Usage = map[string]*pb.UsageHistory{}
@@ -162,7 +120,7 @@ func (p *UsageSvc) Read(ctx context.Context, request *pb.ReadRequest, response *
 	recs, err := store.Read(keyPrefix, store.ReadPrefix())
 	if err != nil {
 		log.Errorf("Error querying historical data %s", err)
-		return errors.InternalServerError("usage.Read", "Error retrieving usage")
+		return errInternal
 	}
 
 	addEntryToResponse := func(response *pb.ReadResponse, e listEntry, unixTime int64) {
@@ -184,15 +142,18 @@ func (p *UsageSvc) Read(ctx context.Context, request *pb.ReadRequest, response *
 	// add to slices
 	for _, rec := range recs {
 		date := strings.TrimPrefix(rec.Key, keyPrefix)
+		if len(date) != 8 {
+			continue
+		}
 		dateObj, err := time.Parse("20060102", date)
 		if err != nil {
 			log.Errorf("Error parsing date obj %s", err)
-			return errors.InternalServerError("usage.Read", "Error retrieving usage")
+			return errInternal
 		}
 		var de dateEntry
 		if err := json.Unmarshal(rec.Value, &de); err != nil {
 			log.Errorf("Error parsing date obj %s", err)
-			return errors.InternalServerError("usage.Read", "Error retrieving usage")
+			return errInternal
 		}
 		for _, e := range de.Entries {
 			addEntryToResponse(response, e, dateObj.Unix())
@@ -222,27 +183,21 @@ func (p *UsageSvc) Read(ctx context.Context, request *pb.ReadRequest, response *
 		response.Usage[k].Records = append(v.Records[:lenRecs-2], v.Records[lenRecs-1])
 
 	}
-	return nil
-}
 
-func verifyMicroAdmin(ctx context.Context, method string) error {
-	acc, ok := auth.AccountFromContext(ctx)
-	if !ok {
-		return errors.Unauthorized(method, "Unauthorized")
+	count, err := p.c.readMonthly(ctx, request.CustomerId, totalFree, time.Now())
+	if err != nil {
+		log.Errorf("Error reading usage %s", err)
+		return errors.InternalServerError(method, "Error reading usage")
 	}
-	if acc.Issuer != "micro" {
-		return errors.Forbidden(method, "Forbidden")
+
+	qs, err := p.loadCustomerQuotas(request.CustomerId)
+	if err != nil {
+		log.Errorf("Error loading customer quotas %s", err)
+		return errInternal
 	}
-	admin := false
-	for _, s := range acc.Scopes {
-		if s == "admin" || s == "service" {
-			admin = true
-			break
-		}
-	}
-	if !admin {
-		return errors.Forbidden(method, "Forbidden")
-	}
+	total, _ := qs.quota(totalFree)
+	response.QuotaRemaining = total - count
+
 	return nil
 }
 
@@ -325,5 +280,158 @@ func (p *UsageSvc) UsageCron() {
 
 func (p *UsageSvc) Sweep(ctx context.Context, request *pb.SweepRequest, response *pb.SweepResponse) error {
 	p.UsageCron()
+	return nil
+}
+
+func (p *UsageSvc) deleteUser(ctx context.Context, userID string) error {
+	if err := p.c.deleteUser(ctx, userID); err != nil {
+		return err
+	}
+
+	recs, err := store.Read(fmt.Sprintf("%s/%s/", prefixUsageByCustomer, userID), store.ReadPrefix())
+	if err != nil {
+		return err
+	}
+	for _, rec := range recs {
+		if err := store.Delete(rec.Key); err != nil {
+			return err
+		}
+	}
+
+	if err := store.Delete(quotaByCustKey(userID)); err != nil {
+		return err
+	}
+	return nil
+
+}
+
+func (p *UsageSvc) DeleteCustomer(ctx context.Context, request *pb.DeleteCustomerRequest, response *pb.DeleteCustomerResponse) error {
+	if _, err := m3oauth.VerifyMicroAdmin(ctx, "usage.DeleteCustomer"); err != nil {
+		return err
+	}
+
+	if len(request.Id) == 0 {
+		return errors.BadRequest("usage.DeleteCustomer", "Error deleting customer")
+	}
+
+	if err := p.deleteUser(ctx, request.Id); err != nil {
+		log.Errorf("Error deleting customer %s", err)
+		return err
+	}
+	return nil
+}
+
+func (p *UsageSvc) SaveEvent(ctx context.Context, request *pb.SaveEventRequest, response *pb.SaveEventResponse) error {
+	if request.Event == nil {
+		return fmt.Errorf("event not provided")
+	}
+	if request.Event.Table == "" {
+		return fmt.Errorf("table not provided")
+	}
+	rec := request.Event.Record.AsMap()
+	if request.Event.Id == "" {
+		request.Event.Id = uuid.New().String()
+	}
+	rec["id"] = request.Event.Id
+	rec["createdAt"] = time.Now().Unix()
+	bs, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal(bs, request.Event.Record)
+	if err != nil {
+		return err
+	}
+	_, err = p.dbService.Create(ctx, &dbproto.CreateRequest{
+		Table:  request.Event.Table,
+		Record: request.Event.Record,
+	})
+	return err
+}
+
+func (p *UsageSvc) ListEvents(ctx context.Context, request *pb.ListEventsRequest, response *pb.ListEventsResponse) error {
+	if request.Table == "" {
+		return fmt.Errorf("no table provided")
+	}
+	resp, err := p.dbService.Read(ctx, &dbproto.ReadRequest{
+		Table:   request.Table,
+		Query:   "createdAt > 0",
+		OrderBy: "createdAt",
+		Order:   "desc",
+	})
+	if err != nil {
+		return err
+	}
+	for _, v := range resp.Records {
+		response.Events = append(response.Events, &pb.Event{
+			Table:  request.Table,
+			Record: v,
+		})
+	}
+	return nil
+}
+
+func (p *UsageSvc) ReadMonthlyTotal(ctx context.Context, request *pb.ReadMonthlyTotalRequest, response *pb.ReadMonthlyTotalResponse) error {
+	acc, ok := auth.AccountFromContext(ctx)
+	if !ok {
+		return errors.Unauthorized("usage.ReadMonthlyTotal", "Unauthorized")
+	}
+	if len(request.CustomerId) == 0 {
+		request.CustomerId = acc.ID
+	}
+	if acc.ID != request.CustomerId {
+		_, err := m3oauth.VerifyMicroAdmin(ctx, "usage.ReadMonthlyTotal")
+		if err != nil {
+			return err
+		}
+	}
+
+	count, err := p.c.readMonthly(ctx, request.CustomerId, "total", time.Now())
+	if err != nil {
+		log.Errorf("Error reading usage %s", err)
+		return errors.InternalServerError("usage.ReadMonthlyTotal", "Error reading usage")
+	}
+	response.Requests = count
+
+	if request.Detail {
+		usage, err := p.c.listMonthliesForUser(request.CustomerId, time.Now())
+		if err != nil {
+			log.Errorf("Error reading usage %s", err)
+			return errors.InternalServerError("usage.ReadMonthlyTotal", "Error reading usage")
+		}
+		ret := map[string]int64{}
+		for _, le := range usage {
+			ret[le.Service] = le.Count
+		}
+		response.EndpointRequests = ret
+	}
+	return nil
+}
+
+func (p *UsageSvc) ReadMonthly(ctx context.Context, request *pb.ReadMonthlyRequest, response *pb.ReadMonthlyResponse) error {
+	method := "usage.ReadMonthly"
+	_, err := m3oauth.VerifyMicroAdmin(ctx, method)
+	if err != nil {
+		return err
+	}
+	t := time.Now()
+	response.Requests = map[string]int64{}
+	response.Quotas = map[string]int64{}
+	qs, err := p.loadCustomerQuotas(request.CustomerId)
+	if err != nil {
+		log.Errorf("Error loading customer quotas %s", err)
+		return errors.InternalServerError(method, "Error reading usage")
+	}
+	for _, v := range request.Endpoints {
+		count, err := p.c.readMonthly(ctx, request.CustomerId, v, t)
+		if err != nil {
+			log.Errorf("Error reading usage %s", err)
+			return errors.InternalServerError(method, "Error reading usage")
+		}
+		response.Requests[v] = count
+		if q, ok := qs.quota(v); ok {
+			response.Quotas[v] = q
+		}
+	}
 	return nil
 }

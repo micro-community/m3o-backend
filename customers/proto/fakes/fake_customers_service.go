@@ -10,6 +10,21 @@ import (
 )
 
 type FakeCustomersService struct {
+	BanStub        func(context.Context, *customers.BanRequest, ...client.CallOption) (*customers.BanResponse, error)
+	banMutex       sync.RWMutex
+	banArgsForCall []struct {
+		arg1 context.Context
+		arg2 *customers.BanRequest
+		arg3 []client.CallOption
+	}
+	banReturns struct {
+		result1 *customers.BanResponse
+		result2 error
+	}
+	banReturnsOnCall map[int]struct {
+		result1 *customers.BanResponse
+		result2 error
+	}
 	CreateStub        func(context.Context, *customers.CreateRequest, ...client.CallOption) (*customers.CreateResponse, error)
 	createMutex       sync.RWMutex
 	createArgsForCall []struct {
@@ -55,6 +70,36 @@ type FakeCustomersService struct {
 		result1 *customers.ListResponse
 		result2 error
 	}
+	LoginStub        func(context.Context, *customers.LoginRequest, ...client.CallOption) (*customers.LoginResponse, error)
+	loginMutex       sync.RWMutex
+	loginArgsForCall []struct {
+		arg1 context.Context
+		arg2 *customers.LoginRequest
+		arg3 []client.CallOption
+	}
+	loginReturns struct {
+		result1 *customers.LoginResponse
+		result2 error
+	}
+	loginReturnsOnCall map[int]struct {
+		result1 *customers.LoginResponse
+		result2 error
+	}
+	LogoutStub        func(context.Context, *customers.LogoutRequest, ...client.CallOption) (*customers.LogoutResponse, error)
+	logoutMutex       sync.RWMutex
+	logoutArgsForCall []struct {
+		arg1 context.Context
+		arg2 *customers.LogoutRequest
+		arg3 []client.CallOption
+	}
+	logoutReturns struct {
+		result1 *customers.LogoutResponse
+		result2 error
+	}
+	logoutReturnsOnCall map[int]struct {
+		result1 *customers.LogoutResponse
+		result2 error
+	}
 	MarkVerifiedStub        func(context.Context, *customers.MarkVerifiedRequest, ...client.CallOption) (*customers.MarkVerifiedResponse, error)
 	markVerifiedMutex       sync.RWMutex
 	markVerifiedArgsForCall []struct {
@@ -85,6 +130,21 @@ type FakeCustomersService struct {
 		result1 *customers.ReadResponse
 		result2 error
 	}
+	UnbanStub        func(context.Context, *customers.UnbanRequest, ...client.CallOption) (*customers.UnbanResponse, error)
+	unbanMutex       sync.RWMutex
+	unbanArgsForCall []struct {
+		arg1 context.Context
+		arg2 *customers.UnbanRequest
+		arg3 []client.CallOption
+	}
+	unbanReturns struct {
+		result1 *customers.UnbanResponse
+		result2 error
+	}
+	unbanReturnsOnCall map[int]struct {
+		result1 *customers.UnbanResponse
+		result2 error
+	}
 	UpdateStub        func(context.Context, *customers.UpdateRequest, ...client.CallOption) (*customers.UpdateResponse, error)
 	updateMutex       sync.RWMutex
 	updateArgsForCall []struct {
@@ -100,8 +160,89 @@ type FakeCustomersService struct {
 		result1 *customers.UpdateResponse
 		result2 error
 	}
+	UpdateNameStub        func(context.Context, *customers.UpdateNameRequest, ...client.CallOption) (*customers.UpdateNameResponse, error)
+	updateNameMutex       sync.RWMutex
+	updateNameArgsForCall []struct {
+		arg1 context.Context
+		arg2 *customers.UpdateNameRequest
+		arg3 []client.CallOption
+	}
+	updateNameReturns struct {
+		result1 *customers.UpdateNameResponse
+		result2 error
+	}
+	updateNameReturnsOnCall map[int]struct {
+		result1 *customers.UpdateNameResponse
+		result2 error
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeCustomersService) Ban(arg1 context.Context, arg2 *customers.BanRequest, arg3 ...client.CallOption) (*customers.BanResponse, error) {
+	fake.banMutex.Lock()
+	ret, specificReturn := fake.banReturnsOnCall[len(fake.banArgsForCall)]
+	fake.banArgsForCall = append(fake.banArgsForCall, struct {
+		arg1 context.Context
+		arg2 *customers.BanRequest
+		arg3 []client.CallOption
+	}{arg1, arg2, arg3})
+	stub := fake.BanStub
+	fakeReturns := fake.banReturns
+	fake.recordInvocation("Ban", []interface{}{arg1, arg2, arg3})
+	fake.banMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3...)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeCustomersService) BanCallCount() int {
+	fake.banMutex.RLock()
+	defer fake.banMutex.RUnlock()
+	return len(fake.banArgsForCall)
+}
+
+func (fake *FakeCustomersService) BanCalls(stub func(context.Context, *customers.BanRequest, ...client.CallOption) (*customers.BanResponse, error)) {
+	fake.banMutex.Lock()
+	defer fake.banMutex.Unlock()
+	fake.BanStub = stub
+}
+
+func (fake *FakeCustomersService) BanArgsForCall(i int) (context.Context, *customers.BanRequest, []client.CallOption) {
+	fake.banMutex.RLock()
+	defer fake.banMutex.RUnlock()
+	argsForCall := fake.banArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeCustomersService) BanReturns(result1 *customers.BanResponse, result2 error) {
+	fake.banMutex.Lock()
+	defer fake.banMutex.Unlock()
+	fake.BanStub = nil
+	fake.banReturns = struct {
+		result1 *customers.BanResponse
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeCustomersService) BanReturnsOnCall(i int, result1 *customers.BanResponse, result2 error) {
+	fake.banMutex.Lock()
+	defer fake.banMutex.Unlock()
+	fake.BanStub = nil
+	if fake.banReturnsOnCall == nil {
+		fake.banReturnsOnCall = make(map[int]struct {
+			result1 *customers.BanResponse
+			result2 error
+		})
+	}
+	fake.banReturnsOnCall[i] = struct {
+		result1 *customers.BanResponse
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *FakeCustomersService) Create(arg1 context.Context, arg2 *customers.CreateRequest, arg3 ...client.CallOption) (*customers.CreateResponse, error) {
@@ -302,6 +443,138 @@ func (fake *FakeCustomersService) ListReturnsOnCall(i int, result1 *customers.Li
 	}{result1, result2}
 }
 
+func (fake *FakeCustomersService) Login(arg1 context.Context, arg2 *customers.LoginRequest, arg3 ...client.CallOption) (*customers.LoginResponse, error) {
+	fake.loginMutex.Lock()
+	ret, specificReturn := fake.loginReturnsOnCall[len(fake.loginArgsForCall)]
+	fake.loginArgsForCall = append(fake.loginArgsForCall, struct {
+		arg1 context.Context
+		arg2 *customers.LoginRequest
+		arg3 []client.CallOption
+	}{arg1, arg2, arg3})
+	stub := fake.LoginStub
+	fakeReturns := fake.loginReturns
+	fake.recordInvocation("Login", []interface{}{arg1, arg2, arg3})
+	fake.loginMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3...)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeCustomersService) LoginCallCount() int {
+	fake.loginMutex.RLock()
+	defer fake.loginMutex.RUnlock()
+	return len(fake.loginArgsForCall)
+}
+
+func (fake *FakeCustomersService) LoginCalls(stub func(context.Context, *customers.LoginRequest, ...client.CallOption) (*customers.LoginResponse, error)) {
+	fake.loginMutex.Lock()
+	defer fake.loginMutex.Unlock()
+	fake.LoginStub = stub
+}
+
+func (fake *FakeCustomersService) LoginArgsForCall(i int) (context.Context, *customers.LoginRequest, []client.CallOption) {
+	fake.loginMutex.RLock()
+	defer fake.loginMutex.RUnlock()
+	argsForCall := fake.loginArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeCustomersService) LoginReturns(result1 *customers.LoginResponse, result2 error) {
+	fake.loginMutex.Lock()
+	defer fake.loginMutex.Unlock()
+	fake.LoginStub = nil
+	fake.loginReturns = struct {
+		result1 *customers.LoginResponse
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeCustomersService) LoginReturnsOnCall(i int, result1 *customers.LoginResponse, result2 error) {
+	fake.loginMutex.Lock()
+	defer fake.loginMutex.Unlock()
+	fake.LoginStub = nil
+	if fake.loginReturnsOnCall == nil {
+		fake.loginReturnsOnCall = make(map[int]struct {
+			result1 *customers.LoginResponse
+			result2 error
+		})
+	}
+	fake.loginReturnsOnCall[i] = struct {
+		result1 *customers.LoginResponse
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeCustomersService) Logout(arg1 context.Context, arg2 *customers.LogoutRequest, arg3 ...client.CallOption) (*customers.LogoutResponse, error) {
+	fake.logoutMutex.Lock()
+	ret, specificReturn := fake.logoutReturnsOnCall[len(fake.logoutArgsForCall)]
+	fake.logoutArgsForCall = append(fake.logoutArgsForCall, struct {
+		arg1 context.Context
+		arg2 *customers.LogoutRequest
+		arg3 []client.CallOption
+	}{arg1, arg2, arg3})
+	stub := fake.LogoutStub
+	fakeReturns := fake.logoutReturns
+	fake.recordInvocation("Logout", []interface{}{arg1, arg2, arg3})
+	fake.logoutMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3...)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeCustomersService) LogoutCallCount() int {
+	fake.logoutMutex.RLock()
+	defer fake.logoutMutex.RUnlock()
+	return len(fake.logoutArgsForCall)
+}
+
+func (fake *FakeCustomersService) LogoutCalls(stub func(context.Context, *customers.LogoutRequest, ...client.CallOption) (*customers.LogoutResponse, error)) {
+	fake.logoutMutex.Lock()
+	defer fake.logoutMutex.Unlock()
+	fake.LogoutStub = stub
+}
+
+func (fake *FakeCustomersService) LogoutArgsForCall(i int) (context.Context, *customers.LogoutRequest, []client.CallOption) {
+	fake.logoutMutex.RLock()
+	defer fake.logoutMutex.RUnlock()
+	argsForCall := fake.logoutArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeCustomersService) LogoutReturns(result1 *customers.LogoutResponse, result2 error) {
+	fake.logoutMutex.Lock()
+	defer fake.logoutMutex.Unlock()
+	fake.LogoutStub = nil
+	fake.logoutReturns = struct {
+		result1 *customers.LogoutResponse
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeCustomersService) LogoutReturnsOnCall(i int, result1 *customers.LogoutResponse, result2 error) {
+	fake.logoutMutex.Lock()
+	defer fake.logoutMutex.Unlock()
+	fake.LogoutStub = nil
+	if fake.logoutReturnsOnCall == nil {
+		fake.logoutReturnsOnCall = make(map[int]struct {
+			result1 *customers.LogoutResponse
+			result2 error
+		})
+	}
+	fake.logoutReturnsOnCall[i] = struct {
+		result1 *customers.LogoutResponse
+		result2 error
+	}{result1, result2}
+}
+
 func (fake *FakeCustomersService) MarkVerified(arg1 context.Context, arg2 *customers.MarkVerifiedRequest, arg3 ...client.CallOption) (*customers.MarkVerifiedResponse, error) {
 	fake.markVerifiedMutex.Lock()
 	ret, specificReturn := fake.markVerifiedReturnsOnCall[len(fake.markVerifiedArgsForCall)]
@@ -434,6 +707,72 @@ func (fake *FakeCustomersService) ReadReturnsOnCall(i int, result1 *customers.Re
 	}{result1, result2}
 }
 
+func (fake *FakeCustomersService) Unban(arg1 context.Context, arg2 *customers.UnbanRequest, arg3 ...client.CallOption) (*customers.UnbanResponse, error) {
+	fake.unbanMutex.Lock()
+	ret, specificReturn := fake.unbanReturnsOnCall[len(fake.unbanArgsForCall)]
+	fake.unbanArgsForCall = append(fake.unbanArgsForCall, struct {
+		arg1 context.Context
+		arg2 *customers.UnbanRequest
+		arg3 []client.CallOption
+	}{arg1, arg2, arg3})
+	stub := fake.UnbanStub
+	fakeReturns := fake.unbanReturns
+	fake.recordInvocation("Unban", []interface{}{arg1, arg2, arg3})
+	fake.unbanMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3...)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeCustomersService) UnbanCallCount() int {
+	fake.unbanMutex.RLock()
+	defer fake.unbanMutex.RUnlock()
+	return len(fake.unbanArgsForCall)
+}
+
+func (fake *FakeCustomersService) UnbanCalls(stub func(context.Context, *customers.UnbanRequest, ...client.CallOption) (*customers.UnbanResponse, error)) {
+	fake.unbanMutex.Lock()
+	defer fake.unbanMutex.Unlock()
+	fake.UnbanStub = stub
+}
+
+func (fake *FakeCustomersService) UnbanArgsForCall(i int) (context.Context, *customers.UnbanRequest, []client.CallOption) {
+	fake.unbanMutex.RLock()
+	defer fake.unbanMutex.RUnlock()
+	argsForCall := fake.unbanArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeCustomersService) UnbanReturns(result1 *customers.UnbanResponse, result2 error) {
+	fake.unbanMutex.Lock()
+	defer fake.unbanMutex.Unlock()
+	fake.UnbanStub = nil
+	fake.unbanReturns = struct {
+		result1 *customers.UnbanResponse
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeCustomersService) UnbanReturnsOnCall(i int, result1 *customers.UnbanResponse, result2 error) {
+	fake.unbanMutex.Lock()
+	defer fake.unbanMutex.Unlock()
+	fake.UnbanStub = nil
+	if fake.unbanReturnsOnCall == nil {
+		fake.unbanReturnsOnCall = make(map[int]struct {
+			result1 *customers.UnbanResponse
+			result2 error
+		})
+	}
+	fake.unbanReturnsOnCall[i] = struct {
+		result1 *customers.UnbanResponse
+		result2 error
+	}{result1, result2}
+}
+
 func (fake *FakeCustomersService) Update(arg1 context.Context, arg2 *customers.UpdateRequest, arg3 ...client.CallOption) (*customers.UpdateResponse, error) {
 	fake.updateMutex.Lock()
 	ret, specificReturn := fake.updateReturnsOnCall[len(fake.updateArgsForCall)]
@@ -500,21 +839,97 @@ func (fake *FakeCustomersService) UpdateReturnsOnCall(i int, result1 *customers.
 	}{result1, result2}
 }
 
+func (fake *FakeCustomersService) UpdateName(arg1 context.Context, arg2 *customers.UpdateNameRequest, arg3 ...client.CallOption) (*customers.UpdateNameResponse, error) {
+	fake.updateNameMutex.Lock()
+	ret, specificReturn := fake.updateNameReturnsOnCall[len(fake.updateNameArgsForCall)]
+	fake.updateNameArgsForCall = append(fake.updateNameArgsForCall, struct {
+		arg1 context.Context
+		arg2 *customers.UpdateNameRequest
+		arg3 []client.CallOption
+	}{arg1, arg2, arg3})
+	stub := fake.UpdateNameStub
+	fakeReturns := fake.updateNameReturns
+	fake.recordInvocation("UpdateName", []interface{}{arg1, arg2, arg3})
+	fake.updateNameMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3...)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeCustomersService) UpdateNameCallCount() int {
+	fake.updateNameMutex.RLock()
+	defer fake.updateNameMutex.RUnlock()
+	return len(fake.updateNameArgsForCall)
+}
+
+func (fake *FakeCustomersService) UpdateNameCalls(stub func(context.Context, *customers.UpdateNameRequest, ...client.CallOption) (*customers.UpdateNameResponse, error)) {
+	fake.updateNameMutex.Lock()
+	defer fake.updateNameMutex.Unlock()
+	fake.UpdateNameStub = stub
+}
+
+func (fake *FakeCustomersService) UpdateNameArgsForCall(i int) (context.Context, *customers.UpdateNameRequest, []client.CallOption) {
+	fake.updateNameMutex.RLock()
+	defer fake.updateNameMutex.RUnlock()
+	argsForCall := fake.updateNameArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeCustomersService) UpdateNameReturns(result1 *customers.UpdateNameResponse, result2 error) {
+	fake.updateNameMutex.Lock()
+	defer fake.updateNameMutex.Unlock()
+	fake.UpdateNameStub = nil
+	fake.updateNameReturns = struct {
+		result1 *customers.UpdateNameResponse
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeCustomersService) UpdateNameReturnsOnCall(i int, result1 *customers.UpdateNameResponse, result2 error) {
+	fake.updateNameMutex.Lock()
+	defer fake.updateNameMutex.Unlock()
+	fake.UpdateNameStub = nil
+	if fake.updateNameReturnsOnCall == nil {
+		fake.updateNameReturnsOnCall = make(map[int]struct {
+			result1 *customers.UpdateNameResponse
+			result2 error
+		})
+	}
+	fake.updateNameReturnsOnCall[i] = struct {
+		result1 *customers.UpdateNameResponse
+		result2 error
+	}{result1, result2}
+}
+
 func (fake *FakeCustomersService) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.banMutex.RLock()
+	defer fake.banMutex.RUnlock()
 	fake.createMutex.RLock()
 	defer fake.createMutex.RUnlock()
 	fake.deleteMutex.RLock()
 	defer fake.deleteMutex.RUnlock()
 	fake.listMutex.RLock()
 	defer fake.listMutex.RUnlock()
+	fake.loginMutex.RLock()
+	defer fake.loginMutex.RUnlock()
+	fake.logoutMutex.RLock()
+	defer fake.logoutMutex.RUnlock()
 	fake.markVerifiedMutex.RLock()
 	defer fake.markVerifiedMutex.RUnlock()
 	fake.readMutex.RLock()
 	defer fake.readMutex.RUnlock()
+	fake.unbanMutex.RLock()
+	defer fake.unbanMutex.RUnlock()
 	fake.updateMutex.RLock()
 	defer fake.updateMutex.RUnlock()
+	fake.updateNameMutex.RLock()
+	defer fake.updateNameMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

@@ -9,6 +9,7 @@ service Balance {
 	rpc Decrement(DecrementRequest) returns (DecrementResponse) {}
 	rpc Current(CurrentRequest) returns (CurrentResponse) {}
 	rpc ListAdjustments(ListAdjustmentsRequest) returns (ListAdjustmentsResponse) {}
+	rpc DeleteCustomer(DeleteCustomerRequest) returns (DeleteCustomerResponse) {}
 }
 
 message IncrementRequest {
@@ -58,4 +59,10 @@ message Adjustment {
 message ListAdjustmentsResponse {
 	repeated Adjustment adjustments = 1;
 }
+
+message DeleteCustomerRequest {
+	string user_id = 1;
+}
+
+message DeleteCustomerResponse {}
 

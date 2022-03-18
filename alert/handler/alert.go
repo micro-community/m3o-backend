@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
@@ -44,10 +46,16 @@ type slackConf struct {
 	Username string `json:"user_name"`
 }
 
+type discordConf struct {
+	Enabled bool   `json:"enabled"`
+	Webhook string `json:"webhook""`
+}
+
 type conf struct {
-	Slack        slackConf `json:"slack"`
-	GaPropertyID string    `json:"ga_property_id"`
-	BlockList    []string  `json:"blocklist"`
+	Slack        slackConf   `json:"slack"`
+	GaPropertyID string      `json:"ga_property_id"`
+	BlockList    []string    `json:"blocklist"`
+	Discord      discordConf `json:"discord"`
 }
 
 func NewAlert() *Alert {
@@ -73,6 +81,7 @@ func NewAlert() *Alert {
 	if len(c.Slack.Username) == 0 {
 		c.Slack.Username = "Alert Service"
 	}
+	log.Infof("Discord enabled: %v", c.Discord.Enabled)
 
 	return &Alert{
 		slackClient: slack.New(c.Slack.Token),
@@ -109,16 +118,38 @@ func (e *Alert) ReportEvent(ctx context.Context, req *alert.ReportEventRequest, 
 	if err != nil {
 		log.Warnf("Error sending event to google analytics: %v", err)
 	}
-	if e.config.Slack.Enabled && req.Event.Action != "success" { // don't care about success actions right now
-		jsond, err := json.MarshalIndent(req.Event, "", "   ")
-		if err != nil {
-			return err
-		}
-		msg := fmt.Sprintf("Event received:\n```\n%v\n```", string(jsond))
+	if req.Event.Action == "success" {
+		// don't care about success actions right now
+		return nil
+	}
+	jsond, err := json.MarshalIndent(req.Event, "", "   ")
+	if err != nil {
+		return err
+	}
+	msg := fmt.Sprintf("Event received:\n```\n%v\n```", string(jsond))
+
+	if e.config.Slack.Enabled {
 		_, _, _, err = e.slackClient.SendMessage(e.config.Slack.Channel, slack.MsgOptionUsername(e.config.Slack.Username), slack.MsgOptionText(msg, false))
 		if err != nil {
+			log.Errorf("Error sending to Slack %s", err)
 			return err
 		}
+	}
+	if e.config.Discord.Enabled {
+
+		discordMsg := map[string]interface{}{"content": msg}
+		b, _ := json.Marshal(discordMsg)
+		rsp, err := http.Post(e.config.Discord.Webhook, "application/json", bytes.NewBuffer(b))
+		if err != nil {
+			log.Errorf("Error sending to Discord %s", err)
+			return err
+		}
+		defer rsp.Body.Close()
+		if rsp.StatusCode > 299 {
+			b, _ := ioutil.ReadAll(rsp.Body)
+			log.Errorf("Error sending to Discord %v %s", rsp.StatusCode, string(b))
+		}
+
 	}
 	return nil
 }

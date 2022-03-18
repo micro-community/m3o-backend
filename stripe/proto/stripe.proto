@@ -11,6 +11,9 @@ service Stripe {
 	rpc DeleteCard(DeleteCardRequest) returns (DeleteCardResponse);
 	rpc ListPayments(ListPaymentsRequest) returns (ListPaymentsResponse);
 	rpc GetPayment(GetPaymentRequest) returns (GetPaymentResponse);
+	rpc Subscribe(SubscribeRequest) returns (SubscribeResponse);
+	rpc Unsubscribe(UnsubscribeRequest) returns (UnsubscribeResponse);
+	rpc SetupCard(SetupCardRequest) returns (SetupCardResponse);
 }
 
 message CreateCheckoutSessionRequest {
@@ -58,6 +61,7 @@ message Payment {
 	string currency = 3;
 	int64 date = 4;
 	string receipt_url = 5;
+	string description = 6;
 }
 
 message ListPaymentsResponse {
@@ -72,15 +76,24 @@ message GetPaymentResponse {
 	Payment payment = 1;
 }
 
-message Event {
-	string type = 1;
-	ChargeSuceededEvent charge_succeeded = 2;
+message SubscribeRequest {
+	string price_id = 1;
+	string card_id = 2;
 }
 
-message ChargeSuceededEvent {
-	string customer_id = 1;
-	string currency = 2;
-	int64 amount = 3; // in minor units e.g. cents, pence, etc
-	string charge_id = 4;
+message SubscribeResponse {
+	string subscription_id = 1;
 }
 
+message UnsubscribeRequest {
+	string subscription_id = 1;
+}
+
+message UnsubscribeResponse {
+}
+
+message SetupCardRequest {}
+
+message SetupCardResponse {
+	string client_secret = 1;
+}

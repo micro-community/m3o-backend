@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/rand"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	eventspb "github.com/m3o/services/pkg/events/proto/customers"
 	mevents "github.com/micro/micro/v3/service/events"
 	"github.com/patrickmn/go-cache"
 
@@ -28,14 +32,12 @@ import (
 
 const (
 	microNamespace   = "micro"
-	internalErrorMsg = "An error occurred during onboarding. Contact #m3o-support at slack.m3o.com if the issue persists"
-	topic            = "onboarding"
+	internalErrorMsg = "An error occurred during onboarding. Contact #general at https://m3o.chat/ if the issue persists"
 )
 
 const (
-	expiryDuration = 5 * time.Minute
-
-	onboardingTopic = "onboarding"
+	expiryDuration  = 5 * time.Minute
+	prefixTrackByID = "onboarding.TrackRequest:eqByIdUnordById"
 )
 
 type tokenToEmail struct {
@@ -64,12 +66,15 @@ type ResetToken struct {
 type sendgridConf struct {
 	TemplateID         string `json:"template_id"`
 	RecoveryTemplateID string `json:"recovery_template_id"`
+	WelcomeTemplateID  string `json:"welcome_template_id"`
 }
 
 type conf struct {
-	Sendgrid     sendgridConf `json:"sendgrid"`
-	PromoCredit  int64        `json:"promoCredit"`
-	PromoMessage string       `json:"promoMessage"`
+	Sendgrid            sendgridConf `json:"sendgrid"`
+	AllowList           []string     `json:"allow_list"`
+	BlockList           []string     `json:"block_list"`            // block ANY emails being sent to these emails
+	EngagementBlockList []string     `json:"engagement_block_list"` // allow sign up emails but block engagement emails like welcome etc
+	WelcomeDelay        string       `json:"welcome_delay"`         // delay between creation of customer and sending welcome email (time duration e.g. 24h)
 }
 
 func NewSignup(srv *service.Service, auth auth.Auth) *Signup {
@@ -142,6 +147,39 @@ func (e *Signup) sendVerificationEmail(ctx context.Context,
 	req *onboarding.SendVerificationEmailRequest,
 	rsp *onboarding.SendVerificationEmailResponse) error {
 	logger.Info("Received Signup.SendVerificationEmail request")
+
+	// check block list and allow list
+	if len(e.config.BlockList) > 0 {
+		for _, email := range e.config.BlockList {
+			re, err := regexp.Compile(email)
+			if err != nil {
+				logger.Warnf("Failed to compile block list regexp %s", email)
+				continue
+			}
+			if re.MatchString(req.Email) {
+				logger.Infof("Blocking email from signup %s", req.Email)
+				return merrors.InternalServerError("onboarding.SendVerificationEmail", "Error sending verification email for user")
+			}
+		}
+	} else if len(e.config.AllowList) > 0 {
+		// only allow these to signup
+		allowed := false
+		for _, email := range e.config.AllowList {
+			re, err := regexp.Compile(email)
+			if err != nil {
+				logger.Warnf("Failed to compile allow list regexp %s", email)
+				continue
+			}
+			if re.MatchString(req.Email) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			logger.Infof("Blocking email from signup %s", req.Email)
+			return merrors.InternalServerError("onboarding.SendVerificationEmail", "Error sending verification email for user")
+		}
+	}
 
 	// create entry in customers service
 	crsp, err := e.customerService.Create(ctx, &cproto.CreateRequest{Email: req.Email}, client.WithAuthToken())
@@ -262,7 +300,12 @@ func (e *Signup) completeSignup(ctx context.Context, req *onboarding.CompleteSig
 	}
 	rsp.CustomerID = tok.CustomerID
 	rsp.Namespace = microNamespace
-	if err := mevents.Publish(topic, &onboarding.Event{Type: "newSignup", NewSignup: &onboarding.NewSignupEvent{Email: tok.Email, Id: tok.CustomerID}}); err != nil {
+
+	if err := mevents.Publish(eventspb.Topic, &eventspb.Event{
+		Type:     eventspb.EventType_EventTypeSignup,
+		Customer: &eventspb.Customer{Id: tok.CustomerID},
+		Signup:   &eventspb.Signup{Method: "email"},
+	}); err != nil {
 		logger.Warnf("Error publishing %s", err)
 	}
 
@@ -276,9 +319,20 @@ func (e *Signup) Recover(ctx context.Context, req *onboarding.RecoverRequest, rs
 		return merrors.BadRequest("onboarding.recover", "We have issued a recovery email recently. Please check that.")
 	}
 
+	// is this even a user?
+	crsp, err := e.customerService.Read(ctx, &cproto.ReadRequest{Email: req.Email}, client.WithAuthToken())
+	if err != nil {
+		if merr, ok := err.(*merrors.Error); ok && (merr.Code == 404 || strings.Contains(merr.Detail, "not found")) {
+			// security, don't report back to user but don't send an email
+			return nil
+		}
+		logger.Errorf("Error sending recovery email")
+		return merrors.InternalServerError("onboarding.recover", "Error while trying to send recovery email, please try again later")
+	}
+
 	token := uuid.New().String()
 	created := time.Now().Unix()
-	err := e.resetCode.Create(ResetToken{
+	err = e.resetCode.Create(ResetToken{
 		ID:      req.Email,
 		Token:   token,
 		Created: created,
@@ -295,7 +349,17 @@ func (e *Signup) Recover(ctx context.Context, req *onboarding.RecoverRequest, rs
 		e.cache.Set(req.Email, true, cache.DefaultExpiration)
 	}
 
-	if err := mevents.Publish(topic, &onboarding.Event{Type: "passwordReset", PasswordReset: &onboarding.PasswordResetEvent{Email: req.Email}}); err != nil {
+	if err := mevents.Publish(eventspb.Topic, &eventspb.Event{
+		Type: eventspb.EventType_EventTypePasswordReset,
+		Customer: &eventspb.Customer{
+			Id:      crsp.Customer.Id,
+			Email:   crsp.Customer.Email,
+			Status:  crsp.Customer.Status,
+			Created: crsp.Customer.Created,
+			Updated: crsp.Customer.Updated,
+		},
+		PasswordReset: &eventspb.PasswordReset{},
+	}); err != nil {
 		logger.Warnf("Error publishing %s", err)
 	}
 
@@ -340,4 +404,56 @@ func (e *Signup) ResetPassword(ctx context.Context, req *onboarding.ResetPasswor
 	}
 	e.resetCode.Delete(model.QueryByID(m.ID))
 	return err
+}
+
+func (e *Signup) Track(ctx context.Context,
+	req *onboarding.TrackRequest,
+	rsp *onboarding.TrackResponse) error {
+	if req.Id == "" {
+		return merrors.BadRequest("onboarding.signup.track", "Missing ID param")
+	}
+	oldTrack := onboarding.TrackRequest{}
+	// CRUFT : not a typo, req.Id is repeated to be compatible with the old implementation
+	key := fmt.Sprintf("%s:%s:%s", prefixTrackByID, req.Id, req.Id)
+	recs, err := mstore.Read(key)
+	if err != nil && err != mstore.ErrNotFound {
+		logger.Errorf("Error looking up id %s", err)
+		return merrors.InternalServerError("onboarding.signup.track", "Error processing request")
+	}
+	if len(recs) > 0 {
+		if err := json.Unmarshal(recs[0].Value, &oldTrack); err != nil {
+			logger.Errorf("Error marshalling %s", err)
+			return merrors.InternalServerError("onboarding.signup.track", "Error processing request")
+		}
+	}
+
+	// support partial update
+	if req.GetFirstVisit() == 0 {
+		req.FirstVisit = oldTrack.FirstVisit
+	}
+	if req.GetFirstVerification() == 0 {
+		req.FirstVerification = oldTrack.FirstVerification
+	}
+	if req.Referrer == "" {
+		req.Referrer = oldTrack.Referrer
+	}
+	if req.Registration == 0 {
+		req.Registration = oldTrack.Registration
+	}
+	if req.Email == "" {
+		req.Email = oldTrack.Email
+	}
+
+	b, err := json.Marshal(req)
+	if err != nil {
+		logger.Errorf("Error marshalling %s", err)
+		return merrors.InternalServerError("onboarding.signup.track", "Error processing request")
+	}
+
+	if err := mstore.Write(&mstore.Record{Key: key, Value: b}); err != nil {
+		logger.Errorf("Error writing update %s", err)
+		return merrors.InternalServerError("onboarding.signup.track", "Error processing request")
+	}
+
+	return nil
 }

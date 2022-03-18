@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package v1;
+
+option go_package = "./proto;v1";
+
+service V1 {
+	rpc GenerateKey(GenerateKeyRequest) returns (GenerateKeyResponse) {}
+	rpc ListKeys(ListRequest) returns (ListResponse) {}
+	rpc RevokeKey(RevokeRequest) returns (RevokeResponse) {}
+	rpc UnblockKey(UnblockKeyRequest) returns (UnblockKeyResponse) {}
+	rpc BlockKey(BlockKeyRequest) returns (BlockKeyResponse) {}
+	rpc DeleteCustomer(DeleteCustomerRequest) returns (DeleteCustomerResponse) {}
+}
+
+
+message GenerateKeyRequest {
+	repeated string scopes = 1;
+	string description = 2;
+}
+
+message GenerateKeyResponse {
+	string api_key = 1;
+	string api_key_id = 2;
+}
+
+message ListRequest {}
+
+message ListResponse {
+	repeated APIKey api_keys = 1;
+}
+
+message APIKey {
+	string id = 1;
+	string description = 2;
+	int64 created_time = 3;
+	repeated string scopes = 4;
+	int64 last_seen = 5;
+}
+
+message RevokeRequest {
+	string id = 1;
+}
+
+message RevokeResponse {}
+
+message BlockKeyRequest {
+	string user_id = 1;
+	string namespace = 2;
+	string key_id = 3;
+	string message = 4;
+}
+
+message BlockKeyResponse {}
+
+message UnblockKeyRequest {
+	string user_id = 1;
+	string namespace = 2;
+	string key_id = 3;
+}
+
+message UnblockKeyResponse {}
+
+
+message EnableAPIRequest {
+	string name = 1;
+}
+
+message EnableAPIResponse {}
+
+message DisableAPIRequest {
+	string name = 1;
+}
+
+message DisableAPIResponse {}
+
+message ListAPIsRequest {}
+
+message ListAPIsResponse {
+	repeated string names = 1;
+}
+
+message DeleteCustomerRequest {
+	string id = 1;
+}
+
+message DeleteCustomerResponse {}

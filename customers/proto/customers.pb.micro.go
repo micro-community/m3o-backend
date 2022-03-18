@@ -54,6 +54,16 @@ type CustomersService interface {
 	List(ctx context.Context, in *ListRequest, opts ...client.CallOption) (*ListResponse, error)
 	// Updates a customer
 	Update(ctx context.Context, in *UpdateRequest, opts ...client.CallOption) (*UpdateResponse, error)
+	// Ban the customer
+	Ban(ctx context.Context, in *BanRequest, opts ...client.CallOption) (*BanResponse, error)
+	// Unban the customer
+	Unban(ctx context.Context, in *UnbanRequest, opts ...client.CallOption) (*UnbanResponse, error)
+	// Login returns an auth token
+	Login(ctx context.Context, in *LoginRequest, opts ...client.CallOption) (*LoginResponse, error)
+	// Logout logs the user out
+	Logout(ctx context.Context, in *LogoutRequest, opts ...client.CallOption) (*LogoutResponse, error)
+	// Update the name
+	UpdateName(ctx context.Context, in *UpdateNameRequest, opts ...client.CallOption) (*UpdateNameResponse, error)
 }
 
 type customersService struct {
@@ -128,6 +138,56 @@ func (c *customersService) Update(ctx context.Context, in *UpdateRequest, opts .
 	return out, nil
 }
 
+func (c *customersService) Ban(ctx context.Context, in *BanRequest, opts ...client.CallOption) (*BanResponse, error) {
+	req := c.c.NewRequest(c.name, "Customers.Ban", in)
+	out := new(BanResponse)
+	err := c.c.Call(ctx, req, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customersService) Unban(ctx context.Context, in *UnbanRequest, opts ...client.CallOption) (*UnbanResponse, error) {
+	req := c.c.NewRequest(c.name, "Customers.Unban", in)
+	out := new(UnbanResponse)
+	err := c.c.Call(ctx, req, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customersService) Login(ctx context.Context, in *LoginRequest, opts ...client.CallOption) (*LoginResponse, error) {
+	req := c.c.NewRequest(c.name, "Customers.Login", in)
+	out := new(LoginResponse)
+	err := c.c.Call(ctx, req, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customersService) Logout(ctx context.Context, in *LogoutRequest, opts ...client.CallOption) (*LogoutResponse, error) {
+	req := c.c.NewRequest(c.name, "Customers.Logout", in)
+	out := new(LogoutResponse)
+	err := c.c.Call(ctx, req, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customersService) UpdateName(ctx context.Context, in *UpdateNameRequest, opts ...client.CallOption) (*UpdateNameResponse, error) {
+	req := c.c.NewRequest(c.name, "Customers.UpdateName", in)
+	out := new(UpdateNameResponse)
+	err := c.c.Call(ctx, req, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Server API for Customers service
 
 type CustomersHandler interface {
@@ -143,6 +203,16 @@ type CustomersHandler interface {
 	List(context.Context, *ListRequest, *ListResponse) error
 	// Updates a customer
 	Update(context.Context, *UpdateRequest, *UpdateResponse) error
+	// Ban the customer
+	Ban(context.Context, *BanRequest, *BanResponse) error
+	// Unban the customer
+	Unban(context.Context, *UnbanRequest, *UnbanResponse) error
+	// Login returns an auth token
+	Login(context.Context, *LoginRequest, *LoginResponse) error
+	// Logout logs the user out
+	Logout(context.Context, *LogoutRequest, *LogoutResponse) error
+	// Update the name
+	UpdateName(context.Context, *UpdateNameRequest, *UpdateNameResponse) error
 }
 
 func RegisterCustomersHandler(s server.Server, hdlr CustomersHandler, opts ...server.HandlerOption) error {
@@ -153,6 +223,11 @@ func RegisterCustomersHandler(s server.Server, hdlr CustomersHandler, opts ...se
 		Delete(ctx context.Context, in *DeleteRequest, out *DeleteResponse) error
 		List(ctx context.Context, in *ListRequest, out *ListResponse) error
 		Update(ctx context.Context, in *UpdateRequest, out *UpdateResponse) error
+		Ban(ctx context.Context, in *BanRequest, out *BanResponse) error
+		Unban(ctx context.Context, in *UnbanRequest, out *UnbanResponse) error
+		Login(ctx context.Context, in *LoginRequest, out *LoginResponse) error
+		Logout(ctx context.Context, in *LogoutRequest, out *LogoutResponse) error
+		UpdateName(ctx context.Context, in *UpdateNameRequest, out *UpdateNameResponse) error
 	}
 	type Customers struct {
 		customers
@@ -187,4 +262,24 @@ func (h *customersHandler) List(ctx context.Context, in *ListRequest, out *ListR
 
 func (h *customersHandler) Update(ctx context.Context, in *UpdateRequest, out *UpdateResponse) error {
 	return h.CustomersHandler.Update(ctx, in, out)
+}
+
+func (h *customersHandler) Ban(ctx context.Context, in *BanRequest, out *BanResponse) error {
+	return h.CustomersHandler.Ban(ctx, in, out)
+}
+
+func (h *customersHandler) Unban(ctx context.Context, in *UnbanRequest, out *UnbanResponse) error {
+	return h.CustomersHandler.Unban(ctx, in, out)
+}
+
+func (h *customersHandler) Login(ctx context.Context, in *LoginRequest, out *LoginResponse) error {
+	return h.CustomersHandler.Login(ctx, in, out)
+}
+
+func (h *customersHandler) Logout(ctx context.Context, in *LogoutRequest, out *LogoutResponse) error {
+	return h.CustomersHandler.Logout(ctx, in, out)
+}
+
+func (h *customersHandler) UpdateName(ctx context.Context, in *UpdateNameRequest, out *UpdateNameResponse) error {
+	return h.CustomersHandler.UpdateName(ctx, in, out)
 }

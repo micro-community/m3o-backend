@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	m3oauth "github.com/m3o/services/pkg/auth"
+	"github.com/m3o/services/pkg/events/proto/publicapi"
 	pb "github.com/m3o/services/publicapi/proto"
 	"github.com/micro/micro/v3/service"
 	"github.com/micro/micro/v3/service/auth"
@@ -30,6 +31,11 @@ type APIEntry struct {
 	Pricing      map[string]int64 // pricing mapping endpoints to price in 1/100 of a cent
 	OwnerID      string
 	ExamplesJSON string
+	Category     string
+	Icon         string
+	PostmanJSON  string
+	DisplayName  string
+	Quotas       map[string]int64 // mapping endpoints to their free quotas
 }
 
 type Publicapi struct {
@@ -52,6 +58,7 @@ func (p *Publicapi) Publish(ctx context.Context, request *pb.PublishRequest, res
 	if err != nil && err != store.ErrNotFound {
 		return err
 	}
+	isUpdate := false
 	if len(recs) > 0 {
 		// update the existing
 		var ae APIEntry
@@ -59,24 +66,35 @@ func (p *Publicapi) Publish(ctx context.Context, request *pb.PublishRequest, res
 			return err
 		}
 		id = ae.ID
+		isUpdate = true
 	}
 
-	acc, _ := auth.AccountFromContext(ctx)
+	ownerId := request.Api.OwnerId
+	if len(ownerId) == 0 {
+		acc, _ := auth.AccountFromContext(ctx)
+		ownerId = acc.ID
+	}
+
 	ae := &APIEntry{
 		ID:           id,
 		Name:         request.Api.Name,
 		Description:  request.Api.Description,
 		OpenAPIJSON:  request.Api.OpenApiJson,
 		Pricing:      request.Api.Pricing,
-		OwnerID:      acc.ID,
+		OwnerID:      ownerId,
 		ExamplesJSON: request.Api.ExamplesJson,
+		Category:     request.Api.Category,
+		Icon:         request.Api.Icon,
+		PostmanJSON:  request.Api.PostmanJson,
+		DisplayName:  request.Api.DisplayName,
+		Quotas:       request.Api.Quotas,
 	}
 
 	if err := p.updateEntry(ctx, ae); err != nil {
 		return err
 	}
 	// enable auth rules
-	// we need two rules, one for the /v1/foo/bar from public internet and one for v1api->foo
+	// we need two rules, one for the /v1/foo/bar from public internet and one for v1->foo
 	//micro auth create rule --resource="service:v1.helloworld:*" --priority 1 helloworld-v1
 	//micro auth create rule --resource="service:helloworld:*" --priority 1 --scope '+' helloworld-internal
 	if err := auth.Grant(&auth.Rule{
@@ -111,14 +129,25 @@ func (p *Publicapi) Publish(ctx context.Context, request *pb.PublishRequest, res
 	}
 
 	// event
-	if err := events.Publish("publicapi", pb.Event{Type: "APIPublish",
-		ApiPublish: &pb.APIPublishEvent{
-			Name: ae.Name,
-		}}); err != nil {
-		log.Errorf("Error publishing event %s", err)
+	if isUpdate {
+		if err := events.Publish(publicapi.Topic, publicapi.Event{
+			Type: publicapi.EventType_EventTypeAPIUpdate,
+			ApiUpdate: &publicapi.APIUpdate{
+				Name: ae.Name,
+			}}); err != nil {
+			log.Errorf("Error publishing event %s", err)
+		}
+	} else {
+		if err := events.Publish(publicapi.Topic, publicapi.Event{
+			Type: publicapi.EventType_EventTypeAPIEnable,
+			ApiEnable: &publicapi.APIEnable{
+				Name: ae.Name,
+			}}); err != nil {
+			log.Errorf("Error publishing event %s", err)
+		}
 	}
 	response.Api = marshal(ae)
-	// TODO any other v1api things?
+	// TODO any other v1 things?
 	return nil
 }
 
@@ -236,8 +265,9 @@ func (p *Publicapi) Remove(ctx context.Context, request *pb.RemoveRequest, respo
 	}
 
 	// event
-	if err := events.Publish("publicapi", pb.Event{Type: "APIRemove",
-		ApiRemove: &pb.APIRemoveEvent{
+	if err := events.Publish(publicapi.Topic, publicapi.Event{
+		Type: publicapi.EventType_EventTypeAPIDisable,
+		ApiDisable: &publicapi.APIDisable{
 			Name: ae.Name,
 		}}); err != nil {
 		log.Errorf("Error publishing event %s", err)
@@ -278,6 +308,19 @@ func (p *Publicapi) Update(ctx context.Context, request *pb.UpdateRequest, respo
 	if len(request.Api.ExamplesJson) > 0 {
 		ae.ExamplesJSON = request.Api.ExamplesJson
 	}
+	if len(request.Api.Category) > 0 {
+		ae.Category = request.Api.Category
+	}
+	if len(request.Api.Icon) > 0 {
+		ae.Category = request.Api.Icon
+	}
+	if len(request.Api.PostmanJson) > 0 {
+		ae.PostmanJSON = request.Api.PostmanJson
+	}
+	if len(request.Api.Quotas) > 0 {
+		ae.Quotas = request.Api.Quotas
+	}
+
 	if err := p.updateEntry(ctx, &ae); err != nil {
 		log.Errorf("Error updating entry %s", err)
 		return errors.InternalServerError("publicapi.Update", "Error updating API")
@@ -287,7 +330,7 @@ func (p *Publicapi) Update(ctx context.Context, request *pb.UpdateRequest, respo
 }
 
 func marshal(ae *APIEntry) *pb.PublicAPI {
-	return &pb.PublicAPI{
+	ret := &pb.PublicAPI{
 		Id:           ae.ID,
 		Name:         ae.Name,
 		Description:  ae.Description,
@@ -295,5 +338,15 @@ func marshal(ae *APIEntry) *pb.PublicAPI {
 		Pricing:      ae.Pricing,
 		OwnerId:      ae.OwnerID,
 		ExamplesJson: ae.ExamplesJSON,
+		Category:     ae.Category,
+		Icon:         ae.Icon,
+		PostmanJson:  ae.PostmanJSON,
+		DisplayName:  ae.DisplayName,
+		Quotas:       ae.Quotas,
 	}
+	// hack while we transition to everything having a display name
+	if ret.DisplayName == "" {
+		ret.DisplayName = ret.Name
+	}
+	return ret
 }

@@ -1,85 +1,95 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
-	v1api "github.com/m3o/services/v1api/proto"
+	pevents "github.com/m3o/services/pkg/events"
+	eventspb "github.com/m3o/services/pkg/events/proto/customers"
+	"github.com/m3o/services/pkg/events/proto/requests"
 	mevents "github.com/micro/micro/v3/service/events"
 	"github.com/micro/micro/v3/service/logger"
 )
 
+const (
+	totalID = "total"
+)
+
 func (p *UsageSvc) consumeEvents() {
-	processTopic := func(topic string, handler func(ch <-chan mevents.Event)) {
-		var evs <-chan mevents.Event
-		start := time.Now()
-		for {
-			var err error
-			evs, err = mevents.Consume(topic,
-				mevents.WithAutoAck(false, 30*time.Second),
-				mevents.WithRetryLimit(10), // 10 retries * 30 secs ackWait gives us 5 mins of tolerance for issues
-				mevents.WithGroup(fmt.Sprintf("%s-%s", "usage", topic)))
-			if err == nil {
-				handler(evs)
-				start = time.Now()
-				continue // if for some reason evs closes we loop and try subscribing again
-			}
-			// TODO fix me
-			if time.Since(start) > 2*time.Minute {
-				logger.Fatalf("Failed to subscribe to topic %s: %s", topic, err)
-			}
-			logger.Warnf("Unable to subscribe to topic %s. Will retry in 20 secs. %s", topic, err)
-			time.Sleep(20 * time.Second)
-		}
-	}
-	go processTopic("v1api", p.processV1apiEvents)
+	go pevents.ProcessTopic(requests.Topic, "usage", p.processV1apiEvents)
+	go pevents.ProcessTopic(eventspb.Topic, "usage", p.processCustomerEvents)
 }
 
-func (p *UsageSvc) processV1apiEvents(ch <-chan mevents.Event) {
-	logger.Infof("Starting to process v1api events")
-	for {
-		t := time.NewTimer(2 * time.Minute)
-		var ev mevents.Event
-		select {
-		case ev = <-ch:
-			t.Stop()
-			if len(ev.ID) == 0 {
-				// channel closed
-				logger.Infof("Channel closed, retrying stream connection")
-				return
-			}
-		case <-t.C:
-			// safety net in case we stop receiving messages for some reason
-			logger.Infof("No messages received for last 2 minutes retrying connection")
-			return
-		}
-
-		ve := &v1api.Event{}
-		if err := json.Unmarshal(ev.Payload, ve); err != nil {
-			ev.Nack()
-			logger.Errorf("Error unmarshalling v1api event: $s", err)
-			continue
-		}
-		switch ve.Type {
-		case "Request":
-			if err := p.processRequest(ve.Request, ev.Timestamp); err != nil {
-				ev.Nack()
-				logger.Errorf("Error processing request event %s", err)
-				continue
-			}
-		default:
-			logger.Infof("Unrecognised event %+v", ve)
-		}
-		ev.Ack()
+func (p *UsageSvc) processV1apiEvents(ev mevents.Event) error {
+	ctx := context.Background()
+	ve := &requests.Event{}
+	if err := json.Unmarshal(ev.Payload, ve); err != nil {
+		logger.Errorf("Error unmarshalling v1 event: $s", err)
+		return nil
 	}
+	switch ve.Type {
+	case requests.EventType_EventTypeRequest:
+		if err := p.processRequest(ctx, ve.Request, ev.Timestamp); err != nil {
+			logger.Errorf("Error processing request event %s", err)
+			return err
+		}
+	default:
+		logger.Infof("Unrecognised event %+v", ve)
+	}
+	return nil
+
 }
 
-func (p *UsageSvc) processRequest(event *v1api.RequestEvent, t time.Time) error {
-	_, err := p.c.incr(event.UserId, event.ApiName, 1, t)
-	p.c.incr(event.UserId, fmt.Sprintf("%s$%s", event.ApiName, event.EndpointName), 1, t)
+func (p *UsageSvc) processRequest(ctx context.Context, event *requests.Request, t time.Time) error {
+	// TODO PROJECTS switch to being project aware
+	_, err := p.c.incr(ctx, event.UserId, event.ApiName, 1, t)
+	p.c.incr(ctx, event.UserId, fmt.Sprintf("%s$%s", event.ApiName, event.EndpointName), 1, t)
+	// monthly totals power monthly quotas
+	p.c.incrMonthly(ctx, event.UserId, fmt.Sprintf("%s$%s", event.ApiName, event.EndpointName), 1, t)
+	if event.Price == "free" {
+		// totalFree is the total of all calls to free endpoints (i.e. not paid). Powers a monthly usage cap
+		p.c.incrMonthly(ctx, event.UserId, totalFree, 1, t)
+	}
+	p.c.incrMonthly(ctx, event.UserId, "total", 1, t)
 	// incr total counts for the API and individual endpoint
-	p.c.incr("total", event.ApiName, 1, t)
-	p.c.incr("total", fmt.Sprintf("%s$%s", event.ApiName, event.EndpointName), 1, t)
+	p.c.incr(ctx, totalID, event.ApiName, 1, t)
+	p.c.incr(ctx, totalID, fmt.Sprintf("%s$%s", event.ApiName, event.EndpointName), 1, t)
 	return err
+}
+
+func (p *UsageSvc) processCustomerEvents(ev mevents.Event) error {
+	ctx := context.Background()
+	ce := &eventspb.Event{}
+	if err := json.Unmarshal(ev.Payload, ce); err != nil {
+		logger.Errorf("Error unmarshalling customer event: $s", err)
+		return nil
+	}
+	switch ce.Type {
+	case eventspb.EventType_EventTypeDeleted:
+		if err := p.processCustomerDelete(ctx, ce); err != nil {
+			logger.Errorf("Error processing request event %s", err)
+			return err
+		}
+	case eventspb.EventType_EventTypeSubscriptionChanged:
+		if err := p.processSubscriptionChanged(ctx, ce); err != nil {
+			logger.Errorf("Error processing request event %s", err)
+			return err
+		}
+	default:
+		logger.Infof("Skipping event %+v", ce)
+	}
+	return nil
+
+}
+
+func (p *UsageSvc) processCustomerDelete(ctx context.Context, event *eventspb.Event) error {
+	// delete all their usage
+	return p.deleteUser(ctx, event.Customer.Id)
+}
+
+func (p *UsageSvc) processSubscriptionChanged(ctx context.Context, event *eventspb.Event) error {
+	// adjust their quota according to their subscription tier
+	return p.switchTier(event.Customer.Id, event.SubscriptionChanged.Tier)
 }

@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 package customers;
-option go_package = "github.com/m3o/services/customers/proto;customers";
+option go_package = "./proto;customers";
 
 service Customers {
 	// Creates a new, unverified customer
@@ -16,20 +16,16 @@ service Customers {
 	rpc List(ListRequest) returns (ListResponse) {}
 	// Updates a customer
 	rpc Update(UpdateRequest) returns (UpdateResponse) {}
-}
-
-enum EventType {
-	EventTypeUnknown = 0;
-	EventTypeCreated = 1;
-	EventTypeUpdated = 2;
-	EventTypeDeleted = 3;
-	EventTypeVerified = 4;
-}
-
-message Event {
-	EventType type = 1;
-	Customer customer = 2;
-	string caller_id = 3;
+	// Ban the customer
+	rpc Ban(BanRequest) returns (BanResponse) {}
+	// Unban the customer
+	rpc Unban(UnbanRequest) returns (UnbanResponse) {}
+	// Login returns an auth token
+	rpc Login(LoginRequest) returns (LoginResponse) {}
+	// Logout logs the user out
+	rpc Logout(LogoutRequest) returns (LogoutResponse) {}
+	// Update the name
+	rpc UpdateName(UpdateNameRequest) returns (UpdateNameResponse) {}
 }
 
 message CreateRequest {
@@ -47,6 +43,8 @@ message Customer {
 	int64 created = 3;
 	string email = 6;
 	int64 updated = 7;
+	map<string,string> meta = 8;
+	string name = 9;
 }
 
 message DeleteRequest {
@@ -87,3 +85,48 @@ message UpdateRequest {
 }
 
 message UpdateResponse {}
+
+message BanRequest {
+	string id = 1;
+	string email = 2;
+}
+
+message BanResponse {}
+
+message UnbanRequest {
+	string id = 1;
+	string email = 2;
+}
+
+message UnbanResponse {}
+
+message LoginRequest {
+	string email = 1;
+	string password = 2;
+	string refresh_token = 3;
+}
+
+message Token {
+	string access_token = 1;
+	string refresh_token = 2;
+	int64 expiry = 3;
+}
+
+message LoginResponse {
+	Token token = 1;
+}
+
+message LogoutRequest {
+
+}
+
+message LogoutResponse {
+
+}
+
+message UpdateNameRequest {
+	string name = 1;
+	string id = 2;
+}
+
+message UpdateNameResponse {}
